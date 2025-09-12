@@ -1,4 +1,3 @@
-
 name: Build EXE with PyInstaller
 
 on:
@@ -30,7 +29,7 @@ jobs:
           pyinstaller --onefile --add-data "lista.xlsx;." automacao_notas.py
 
       - name: Upload EXE
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: BaixadorNotas
           path: dist/automacao_notas.exe
