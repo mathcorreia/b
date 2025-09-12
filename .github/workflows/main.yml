@@ -26,7 +26,8 @@ jobs:
 
       - name: Build EXE
         run: |
-          pyinstaller --onefile automator.py
+         pyinstaller --onefile --hidden-import=pandas._libs.tslibs.np_datetime --hidden-import=pandas._libs.tslibs.nattype  automacao_notas.py
+
 
       - name: Upload EXE
         uses: actions/upload-artifact@v4
