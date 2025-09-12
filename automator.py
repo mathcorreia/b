@@ -63,14 +63,19 @@ WebDriverWait(driver, 30).until(
 ).click()
 registrar_log("Botão GFS clicado.")
 
-# Clicar em FSE > Busca FSE
-WebDriverWait(driver, 10).until(
-EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
-).click()
 
-WebDriverWait(driver, 10).until(
-EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
+# Clicar em FSE (abre o dropdown)
+WebDriverWait(driver, 30).until(
+    EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
 ).click()
+registrar_log("Menu FSE aberto.")
+
+# Esperar e clicar em Busca FSe
+WebDriverWait(driver, 30).until(
+    EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
+).click()
+registrar_log("Busca FSe acessado.")
+
 
 # Loop de buscar e realizar download
 for index, row in df.iterrows():
