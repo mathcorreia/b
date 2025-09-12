@@ -52,19 +52,19 @@ driver = webdriver.Edge(service=service, options=options)
 driver.get("https://web.embraer.com.br/")
 input("Faça login manualmente e pressione ENTER para continuar...")
 
- # Clicar em GFS
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.ID, "L2N10"))
-        ).click()
+# Clicar em GFS
+WebDriverWait(driver, 10).until(
+EC.element_to_be_clickable((By.ID, "L2N10"))
+).click()
 
-        # Clicar em FSE > Busca FSE
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
-        ).click()
+# Clicar em FSE > Busca FSE
+WebDriverWait(driver, 10).until(
+EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
+).click()
 
-        WebDriverWait(driver, 10).until(
-            EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
-        ).click()
+WebDriverWait(driver, 10).until(
+EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
+).click()
 
 # Loop de buscar e realizar download
 for index, row in df.iterrows():
