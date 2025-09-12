@@ -9,6 +9,8 @@ from selenium.webdriver.edge.service import Service
 from selenium.webdriver.edge.options import Options
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.common.action_chains import ActionChains
+
 
 # Config geral
 try:
@@ -64,16 +66,25 @@ WebDriverWait(driver, 30).until(
 registrar_log("Botão GFS clicado.")
 
 
-# Clicar em FSE (abre o dropdown)
-WebDriverWait(driver, 30).until(
-    EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
-).click()
+
+# Espera o botão FSE aparecer
+fse_menu = WebDriverWait(driver, 30).until(
+    EC.presence_of_element_located((By.LINK_TEXT, "FSE"))
+)
+
+# Move o mouse sobre o botão FSE para garantir que o dropdown apareça
+ActionChains(driver).move_to_element(fse_menu).perform()
+time.sleep(1)  # pequena pausa para o menu abrir
+
+# Clica no botão FSE
+fse_menu.click()
 registrar_log("Menu FSE aberto.")
 
-# Esperar e clicar em Busca FSe
-WebDriverWait(driver, 30).until(
-    EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
-).click()
+# Espera e clica em Busca FSe
+busca_fse = WebDriverWait(driver, 30).until(
+    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(),'Busca FSe')]"))
+)
+busca_fse.click()
 registrar_log("Busca FSe acessado.")
 
 
