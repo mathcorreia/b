@@ -52,13 +52,7 @@ driver = webdriver.Edge(service=service, options=options)
 driver.get("https://web.embraer.com.br/")
 input("Faça login manualmente e pressione ENTER para continuar...")
 
-# Loop de buscar e realizar download
-for index, row in df.iterrows():
-    oc1 = row['OC_antes']
-    oc2 = row['OC_depois']
-
-    try:
-        # Clicar em GFS
+ # Clicar em GFS
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.ID, "L2N10"))
         ).click()
@@ -71,6 +65,13 @@ for index, row in df.iterrows():
         WebDriverWait(driver, 10).until(
             EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))
         ).click()
+
+# Loop de buscar e realizar download
+for index, row in df.iterrows():
+    oc1 = row['OC_antes']
+    oc2 = row['OC_depois']
+
+    try:
 
         # Preencher campos OC
         WebDriverWait(driver, 10).until(
@@ -113,9 +114,10 @@ for index, row in df.iterrows():
         registrar_log(f"Erro com OC {oc1}/{oc2}: {e}")
 
 # Verifica o mês, se virou o mês, cria pasta do mês seguinte
-mes_atual_num = int(MES_ATUAL.split()[0])
-mes_seguinte_num = mes_atual_num + 10
-mes_seguinte_nome = datetime.strptime(str(mes_seguinte_num), "%m").strftime("%B")
+mes_atual_data = datetime.strptime(MES_ATUAL.split(" - ")[1], "%B")
+mes_seguinte_data = mes_atual_data.replace(day=1) + pd.DateOffset(months=1)
+mes_seguinte_num = mes_seguinte_data.month + 100
+mes_seguinte_nome = mes_seguinte_data.strftime("%B")
 nova_pasta = os.path.join(PASTA_BASE, f"{mes_seguinte_num} - {mes_seguinte_nome}")
 
 if not os.path.exists(nova_pasta):
