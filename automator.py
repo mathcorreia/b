@@ -57,6 +57,12 @@ WebDriverWait(driver, 10).until(
 EC.element_to_be_clickable((By.ID, "L2N10"))
 ).click()
 
+registrar_log("Aguardando botão GFS...")
+WebDriverWait(driver, 30).until(
+    EC.element_to_be_clickable((By.ID, "L2N10"))
+).click()
+registrar_log("Botão GFS clicado.")
+
 # Clicar em FSE > Busca FSE
 WebDriverWait(driver, 10).until(
 EC.element_to_be_clickable((By.LINK_TEXT, "FSE"))
