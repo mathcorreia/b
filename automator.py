@@ -52,40 +52,7 @@ driver = webdriver.Edge(service=service, options=options)
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/")
-input("Faça login manualmente e pressione ENTER para continuar...")
-
-# Clicar em GFS
-WebDriverWait(driver, 10).until(
-EC.element_to_be_clickable((By.ID, "L2N10"))
-).click()
-
-registrar_log("Aguardando botão GFS...")
-WebDriverWait(driver, 30).until(
-    EC.element_to_be_clickable((By.ID, "L2N10"))
-).click()
-registrar_log("Botão GFS clicado.")
-
-
-
-# Espera o botão FSE aparecer
-fse_menu = WebDriverWait(driver, 30).until(
-    EC.presence_of_element_located((By.LINK_TEXT, "FSE"))
-)
-
-# Move o mouse sobre o botão FSE para garantir que o dropdown apareça
-ActionChains(driver).move_to_element(fse_menu).perform()
-time.sleep(1)  # pequena pausa para o menu abrir
-
-# Clica no botão FSE
-fse_menu.click()
-registrar_log("Menu FSE aberto.")
-
-# Espera e clica em Busca FSe
-busca_fse = WebDriverWait(driver, 30).until(
-    EC.element_to_be_clickable((By.XPATH, "//a[contains(text(),'Busca FSe')]"))
-)
-busca_fse.click()
-registrar_log("Busca FSe acessado.")
+input("Faça login manualmente, entre na página para baixar notas e pressione ENTER para continuar...")
 
 
 # Loop de buscar e realizar download
