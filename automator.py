@@ -102,8 +102,9 @@ for index, row in df.iterrows():
         # Clicar em Buscar
         wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-        # Esperar e clicar na lupa
-        wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "glyphicon-search"))).click()
+        # Esperar e clicar na lupa (botão de detalhes da busca)
+        # Este seletor é mais específico e seguro, baseado no ng-click que você informou
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
 
         # Clicar em Lista de Materiais
         wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]"))).click()
