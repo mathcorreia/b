@@ -113,19 +113,7 @@ for index, row in df.iterrows():
         caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
         # Move o pdf para pasta definida em cedoc_docs
-        if caminho_arquivo_baixado:
-            nome_arquivo = os.path.basename(caminho_arquivo_baixado)
-            destino = os.path.join(PASTA_DESTINO, nome_arquivo)
-
-            if not os.path.exists(destino):
-                shutil.move(caminho_arquivo_baixado, destino)
-                registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
-            else:
-                os.remove(caminho_arquivo_baixado)
-                registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
-        else:
-            registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
-
+        
     except Exception as e:
         registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
         # Tenta recarregar a página para se recuperar de um possível erro
