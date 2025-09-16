@@ -66,96 +66,75 @@ options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-# Aguarda o login manual (PAUSA 1)
+# Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
-input("Faça o login e, quando estiver na página principal do portal, pressione ENTER para continuar...")
+input("Faça TODA a navegação (Login, GFS, FSE, Busca FSe) manualmente. Quando a tela de busca estiver pronta, pressione ENTER...")
 
 wait = WebDriverWait(driver, 30)
 
-try:
-    # --- ETAPA DE NAVEGAÇÃO SEMI-AUTOMÁTICA ---
-    registrar_log("Iniciando navegação para GFS...")
-    original_window = driver.current_window_handle
-    wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
-    registrar_log("Clicou no link 'GFS'.")
+# O script começa a trabalhar diretamente no loop de processamento
+registrar_log("Iniciando processamento do Excel...")
 
-    # Espera e muda o foco para a nova aba
-    wait.until(EC.number_of_windows_to_be(2))
-    for window_handle in driver.window_handles:
-        if window_handle != original_window:
-            driver.switch_to.window(window_handle)
-            break
-    registrar_log("Foco alterado para a nova aba da aplicação GFS.")
+# Loop de buscar e realizar download
+for index, row in df.iterrows():
+    oc1 = row['OC_antes']
+    oc2 = row['OC_depois']
 
-    # --- FIM DA PARTE AUTOMÁTICA - INÍCIO DA PAUSA 2 ---
-    input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
-    # --------------------------------------------------
+    try:
+        registrar_log(f"Processando OC: {oc1}/{oc2}")
+        
+        campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
+        campo_oc1.clear()
+        campo_oc1.send_keys(oc1)
 
-    # Loop de buscar e realizar download
-    for index, row in df.iterrows():
-        oc1 = row['OC_antes']
-        oc2 = row['OC_depois']
+        campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
+        campo_oc2.clear()
+        campo_oc2.send_keys(oc2)
 
-        try:
-            registrar_log(f"Processando OC: {oc1}/{oc2}")
-            
-            campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
-            campo_oc1.clear()
-            campo_oc1.send_keys(oc1)
+        wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-            campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
-            campo_oc2.clear()
-            campo_oc2.send_keys(oc2)
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+        
+        # --- CORREÇÃO 1: ESPERA MAIS ROBUSTA E PAUSA ESTRATÉGICA ---
+        # Pausa de 1 segundo para dar tempo da nova página "se assentar"
+        time.sleep(1) 
+        lista_materiais_wait = WebDriverWait(driver, 30)
+        lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
+        lista_materiais_btn.click()
+        # -----------------------------------------------------------
 
-            wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
+        caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
-            
-            lista_materiais_wait = WebDriverWait(driver, 30)
-            lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
-            lista_materiais_btn.click()
+        if caminho_arquivo_baixado:
+            nome_arquivo = os.path.basename(caminho_arquivo_baixado)
+            destino = os.path.join(PASTA_DESTINO, nome_arquivo)
 
-            caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
-
-            if caminho_arquivo_baixado:
-                nome_arquivo = os.path.basename(caminho_arquivo_baixado)
-                destino = os.path.join(PASTA_DESTINO, nome_arquivo)
-
-                if not os.path.exists(destino):
-                    shutil.move(caminho_arquivo_baixado, destino)
-                    registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
-                else:
-                    os.remove(caminho_arquivo_baixado)
-                    registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
+            if not os.path.exists(destino):
+                shutil.move(caminho_arquivo_baixado, destino)
+                registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
             else:
-                registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
+                os.remove(caminho_arquivo_baixado)
+                registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
+        else:
+            registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
 
-        except Exception as e:
-            timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-            nome_screenshot = f"erro_oc_{str(oc1).replace('/', '-')}_{timestamp_erro}.png"
-            caminho_screenshot = os.path.join(os.getcwd(), nome_screenshot)
-            try:
-                driver.save_screenshot(caminho_screenshot)
-                registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - Screenshot salvo em: {caminho_screenshot}")
-            except Exception as screenshot_error:
-                registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
-            
-            try:
-                # Se der erro, o melhor a fazer é pedir para o usuário recolocar na tela de busca
-                input(f"Ocorreu um erro com a OC {oc1}/{oc2}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar com a próxima OC...")
-            except Exception as refresh_error:
-                registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
-                break
+        # --- CORREÇÃO 2: VOLTAR PARA A PÁGINA DE BUSCA PARA CONTINUAR O LOOP ---
+        registrar_log("Retornando à página de busca para a próxima OC...")
+        driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
+        # -------------------------------------------------------------------
 
-except Exception as e:
-     registrar_log(f"ERRO CRÍTICO fora do loop principal: {e}")
-     try:
+    except Exception as e:
         timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nome_screenshot = f"erro_critico_{timestamp_erro}.png"
-        driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
-     except:
-         pass # Se nem o screenshot funcionar, apenas ignora
-
+        nome_screenshot = f"erro_oc_{str(oc1).replace('/', '-')}_{timestamp_erro}.png"
+        caminho_screenshot = os.path.join(os.getcwd(), nome_screenshot)
+        try:
+            driver.save_screenshot(caminho_screenshot)
+            registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - Screenshot salvo em: {caminho_screenshot}")
+        except Exception as screenshot_error:
+            registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
+        
+        # A instrução de recuperação foi mantida
+        input(f"Ocorreu um erro com a OC {oc1}/{oc2}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar...")
 
 registrar_log("Automação finalizada.")
 driver.quit()
