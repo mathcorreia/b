@@ -58,10 +58,8 @@ def esperar_download_concluir(pasta_download, timeout=60):
         segundos += 1
     return None
 
-# Le os dados do excel ex: oc/oclinha
+# Le os dados do excel ex: oc/oclinha e os como nome do arquivo
 try:
-    # --- MUDANÇA AQUI: Lendo o nome da coluna OS ---
-    # Garante que estamos lendo a primeira coluna (índice 0) como 'OS'
     df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
     # Renomeia a primeira coluna para 'OS' para facilitar o acesso
     df.rename(columns={df.columns[0]: 'OS'}, inplace=True) 
@@ -90,7 +88,6 @@ input("Faça o login e, quando estiver na página principal do portal, pressione
 wait = WebDriverWait(driver, 30)
 
 try:
-    # --- ETAPA DE NAVEGAÇÃO SEMI-AUTOMÁTICA ---
     registrar_log("Iniciando navegação para GFS...")
     original_window = driver.current_window_handle
     wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
@@ -104,9 +101,7 @@ try:
             break
     registrar_log("Foco alterado para a nova aba da aplicação GFS.")
 
-    # --- FIM DA PARTE AUTOMÁTICA - INÍCIO DA PAUSA 2 ---
     input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
-    # --------------------------------------------------
 
     # Loop de buscar e realizar download
     for index, row in df.iterrows():
@@ -128,7 +123,6 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # --- DOWNLOAD 1: LISTA DE MATERIAIS (LM) ---
             registrar_log("Baixando Lista de Materiais (LM)...")
             time.sleep(1)
             seletor_lm = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]")
@@ -146,7 +140,6 @@ try:
             else:
                 registrar_log(f"ERRO: Download da Lista de Materiais não concluído para a OS {os_num}")
 
-            # --- DOWNLOAD 2: LISTA DE PEÇAS (LP) ---
             registrar_log("Baixando Lista de Peças (LP)...")
             time.sleep(2)
             seletor_lp = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[2]")
@@ -164,7 +157,6 @@ try:
             else:
                 registrar_log(f"ERRO: Download da Lista de Peças não concluído para a OS {os_num}")
             
-            # --- DOWNLOAD 3: FICHA DE SERVIÇO (FS) ---
             registrar_log("Baixando Ficha de Serviço (FS)...")
             time.sleep(2)
             seletor_fs = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[2]")
