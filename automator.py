@@ -69,25 +69,29 @@ service = Service()
 driver = webdriver.Edge(service=service, options=options)
 
 # Aguarda o login manual
-driver.get("https://web.embraer.com.br/")
-# AGORA VOCÊ SÓ PRECISA FAZER O LOGIN. O ROBÔ FARÁ A NAVEGAÇÃO.
-input("Faça o login e, quando estiver na página principal, pressione ENTER para continuar...")
+driver.get("https://web.embraer.com.br/irj/portal")
+input("Faça o login e, quando estiver na página principal do portal, pressione ENTER para continuar...")
 
-wait = WebDriverWait(driver, 20)
+wait = WebDriverWait(driver, 30) # Aumentado o tempo de espera geral para 30s por segurança
 
 try:
     # --- ETAPA DE NAVEGAÇÃO AUTOMÁTICA ---
-    registrar_log("Navegando até a tela de busca de FSE...")
+    registrar_log("Iniciando navegação automática...")
+
+    # 1. Clica no link "GFS" para entrar no sistema correto
+    gfs_link = wait.until(EC.element_to_be_clickable((By.ID, "L2N10")))
+    gfs_link.click()
+    registrar_log("Clicou no link 'GFS'. Aguardando carregamento da nova página...")
     
-    # 1. Clica no menu dropdown "FSE"
+    # 2. Clica no menu dropdown "FSE" na nova página
     fse_menu = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]")))
     fse_menu.click()
     registrar_log("Clicou no menu 'FSE'.")
 
-    # 2. Clica no link "Busca FSe"
+    # 3. Clica no link "Busca FSe"
     busca_fse_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe")))
     busca_fse_link.click()
-    registrar_log("Clicou em 'Busca FSe'. Acessando a página de busca.")
+    registrar_log("Navegação concluída. Acessando a página de busca.")
     # ------------------------------------
 
     # Loop de buscar e realizar download
@@ -138,9 +142,9 @@ try:
         except Exception as e:
             registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
             try:
-                # Se algo der errado, em vez de só recarregar, ele volta para a tela de busca
+                # Se algo der errado, tenta voltar para a URL de busca e continuar
                 registrar_log("Tentando se recuperar voltando para a tela de busca...")
-                driver.get("https://web.embraer.com.br/gfs/#/fse/search/1") # URL direta para a busca
+                driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
                 time.sleep(3)
             except Exception as refresh_error:
                 registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
