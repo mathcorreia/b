@@ -6,8 +6,8 @@ import locale
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.edge.service import Service
-from selenium.webdriver.edge.options import Options
+from selenium.webdriver.chrome.service import Service as ChromeService # Alterado para Chrome
+from webdriver_manager.chrome import ChromeDriverManager # Nova importação
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -54,9 +54,9 @@ except Exception as e:
     registrar_log(f"ERRO CRÍTICO ao ler o Excel: {e}")
     raise
 
-# Configurações padronizada do Edge
-options = Options()
-options.use_chromium = True
+# --- MUDANÇA PARA CHROME ---
+# Configurações padronizada do Chrome
+options = webdriver.ChromeOptions() 
 options.add_argument("--start-maximized")
 options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
@@ -65,18 +65,18 @@ options.add_experimental_option("prefs", {
     "safebrowsing.enabled": True
 })
 
-service = Service()
-driver = webdriver.Edge(service=service, options=options)
+# Inicializa o driver do Chrome usando o webdriver-manager
+driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+# --- FIM DA MUDANÇA ---
+
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
 input("Faça o login, clique em GFS, depois em FSE > Busca FSe. Quando estiver na tela de busca, pressione ENTER...")
 
-# --- MUDANÇA PRINCIPAL ---
 # Adiciona uma pausa de 3 segundos para garantir que a página esteja 100% carregada
 registrar_log("Aguardando a página estabilizar...")
 time.sleep(3)
-# -------------------------
 
 wait = WebDriverWait(driver, 30)
 
@@ -87,8 +87,7 @@ for index, row in df.iterrows():
 
     try:
         registrar_log(f"Processando OC: {oc1}/{oc2}")
-
-        # Preencher campos OC
+        # O resto do código é exatamente o mesmo...
         campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
         campo_oc1.clear()
         campo_oc1.send_keys(oc1)
@@ -97,21 +96,16 @@ for index, row in df.iterrows():
         campo_oc2.clear()
         campo_oc2.send_keys(oc2)
 
-        # Clicar em Buscar
         wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-        # Esperar e clicar na lupa
         wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
         
-        # Clicar em Lista de Materiais
         lista_materiais_wait = WebDriverWait(driver, 30)
         lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
         lista_materiais_btn.click()
 
-        # Tempo de espera do download/ajustar dependendo do tamanho do arquivo
         caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
-        # Move o pdf para pasta definida em cedoc_docs
         if caminho_arquivo_baixado:
             nome_arquivo = os.path.basename(caminho_arquivo_baixado)
             destino = os.path.join(PASTA_DESTINO, nome_arquivo)
