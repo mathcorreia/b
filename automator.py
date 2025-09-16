@@ -75,30 +75,27 @@ wait = WebDriverWait(driver, 30)
 try:
     # --- ETAPA DE NAVEGAÇÃO AUTOMÁTICA E ROBUSTA ---
     registrar_log("Iniciando navegação automática...")
-
-    # Guarda o identificador da janela/aba original
     original_window = driver.current_window_handle
-
-    # 1. Clica no link "GFS" que abrirá uma nova aba
     wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
     registrar_log("Clicou no link 'GFS'.")
-
-    # 2. ESPERA INTELIGENTE: Aguarda a nova aba abrir
     wait.until(EC.number_of_windows_to_be(2))
     
-    # 3. MUDA O FOCO para a nova aba
     for window_handle in driver.window_handles:
         if window_handle != original_window:
             driver.switch_to.window(window_handle)
             break
     registrar_log("Foco alterado para a nova aba da aplicação GFS.")
     
-    # 4. Agora na nova aba, continua a navegação
-    wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]"))).click()
+    fse_menu = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]")))
+    fse_menu.click()
     registrar_log("Clicou no menu 'FSE'.")
 
-    # 5. Clica no link "Busca FSe"
-    wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))).click()
+    # --- AJUSTE FINAL ---
+    # Pausa estratégica para a animação do menu dropdown terminar
+    time.sleep(0.5) 
+    
+    busca_fse_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe")))
+    busca_fse_link.click()
     registrar_log("Navegação concluída. Acessando a página de busca.")
     # --------------------------------------------------
 
