@@ -76,20 +76,28 @@ try:
     # --- ETAPA DE NAVEGAÇÃO AUTOMÁTICA E ROBUSTA ---
     registrar_log("Iniciando navegação automática...")
 
-    # 1. Clica no link "GFS" para entrar no sistema
+    # Guarda o identificador da janela/aba original
+    original_window = driver.current_window_handle
+
+    # 1. Clica no link "GFS" que abrirá uma nova aba
     wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
     registrar_log("Clicou no link 'GFS'.")
 
-    # 2. ESPERA INTELIGENTE: Aguarda a URL mudar para a da nova aplicação
-    registrar_log("Aguardando carregamento da aplicação GFS...")
-    wait.until(EC.url_contains("appscorp2.embraer.com.br/gfs"))
-    registrar_log("Aplicação GFS carregada com sucesso.")
+    # 2. ESPERA INTELIGENTE: Aguarda a nova aba abrir
+    wait.until(EC.number_of_windows_to_be(2))
     
-    # 3. Clica no menu dropdown "FSE" na nova página
+    # 3. MUDA O FOCO para a nova aba
+    for window_handle in driver.window_handles:
+        if window_handle != original_window:
+            driver.switch_to.window(window_handle)
+            break
+    registrar_log("Foco alterado para a nova aba da aplicação GFS.")
+    
+    # 4. Agora na nova aba, continua a navegação
     wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]"))).click()
     registrar_log("Clicou no menu 'FSE'.")
 
-    # 4. Clica no link "Busca FSe"
+    # 5. Clica no link "Busca FSe"
     wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe"))).click()
     registrar_log("Navegação concluída. Acessando a página de busca.")
     # --------------------------------------------------
@@ -135,7 +143,7 @@ try:
 
         except Exception as e:
             timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-            nome_screenshot = f"erro_oc_{oc1.replace('/', '-')}_{timestamp_erro}.png"
+            nome_screenshot = f"erro_oc_{str(oc1).replace('/', '-')}_{timestamp_erro}.png"
             caminho_screenshot = os.path.join(os.getcwd(), nome_screenshot)
             try:
                 driver.save_screenshot(caminho_screenshot)
