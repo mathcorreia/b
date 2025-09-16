@@ -87,9 +87,8 @@ try:
             break
     registrar_log("Foco alterado para a nova aba da aplicação GFS.")
 
-    # --- FIM DA PARTE AUTOMÁTICA - INÍCIO DA PAUSA 2 ---
     input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
-    # --------------------------------------------------
+    
 
     # Loop de buscar e realizar download
     for index, row in df.iterrows():
@@ -123,11 +122,9 @@ try:
             if caminho_arquivo_baixado:
                 nome_arquivo = os.path.basename(caminho_arquivo_baixado)
                 
-                # --- A MUDANÇA ESTÁ AQUI ---
                 # Cria um novo nome para o arquivo usando a OC
-                novo_nome_arquivo = f"{oc1}-{oc2}_{nome_arquivo}"
+                novo_nome_arquivo = f"{oc1}-{oc2}_LM.pdf"
                 destino = os.path.join(PASTA_DESTINO, novo_nome_arquivo)
-                # -------------------------
 
                 if not os.path.exists(destino):
                     shutil.move(caminho_arquivo_baixado, destino)
