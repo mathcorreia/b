@@ -70,8 +70,13 @@ driver = webdriver.Edge(service=service, options=options)
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
-# INSTRUÇÃO MANUAL ATUALIZADA
 input("Faça o login, clique em GFS, depois em FSE > Busca FSe. Quando estiver na tela de busca, pressione ENTER...")
+
+# --- MUDANÇA PRINCIPAL ---
+# Adiciona uma pausa de 3 segundos para garantir que a página esteja 100% carregada
+registrar_log("Aguardando a página estabilizar...")
+time.sleep(3)
+# -------------------------
 
 wait = WebDriverWait(driver, 30)
 
@@ -124,7 +129,7 @@ for index, row in df.iterrows():
         registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
         try:
             registrar_log("Tentando se recuperar recarregando a página de busca...")
-            driver.get(driver.current_url) # Recarrega a página atual para limpar o formulário
+            driver.get(driver.current_url) 
             time.sleep(3)
         except Exception as refresh_error:
             registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
