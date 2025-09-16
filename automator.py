@@ -111,12 +111,9 @@ try:
 
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Pausa extra para a nova página carregar
             time.sleep(1)
             lista_materiais_wait = WebDriverWait(driver, 30)
             
-            # --- CORREÇÃO FINAL E DEFINITIVA DO SELETOR ---
-            # Usando o XPath exato que você copiou do navegador
             seletor_final = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]")
             lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable(seletor_final))
             lista_materiais_btn.click()
@@ -125,18 +122,22 @@ try:
 
             if caminho_arquivo_baixado:
                 nome_arquivo = os.path.basename(caminho_arquivo_baixado)
-                destino = os.path.join(PASTA_DESTINO, nome_arquivo)
+                
+                # --- A MUDANÇA ESTÁ AQUI ---
+                # Cria um novo nome para o arquivo usando a OC
+                novo_nome_arquivo = f"{oc1}-{oc2}_{nome_arquivo}"
+                destino = os.path.join(PASTA_DESTINO, novo_nome_arquivo)
+                # -------------------------
 
                 if not os.path.exists(destino):
                     shutil.move(caminho_arquivo_baixado, destino)
-                    registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
+                    registrar_log(f"Movido e renomeado: {novo_nome_arquivo} para {PASTA_DESTINO}")
                 else:
                     os.remove(caminho_arquivo_baixado)
-                    registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
+                    registrar_log(f"Arquivo já existe no destino: {novo_nome_arquivo}. Download duplicado removido.")
             else:
                 registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
             
-            # Retorno para a página de busca
             registrar_log(f"Processo da OC {oc1}/{oc2} concluído. Voltando para a página de busca.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
 
@@ -151,7 +152,6 @@ try:
                 registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
             
             try:
-                # Se der erro, o melhor a fazer é pedir para o usuário recolocar na tela de busca
                 input(f"Ocorreu um erro com a OC {oc1}/{oc2}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar com a próxima OC...")
             except Exception as refresh_error:
                 registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
@@ -164,7 +164,7 @@ except Exception as e:
         nome_screenshot = f"erro_critico_{timestamp_erro}.png"
         driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
      except:
-         pass # Se nem o screenshot funcionar, apenas ignora
+         pass
 
 
 registrar_log("Automação finalizada.")
