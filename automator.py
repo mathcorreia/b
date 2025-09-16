@@ -82,7 +82,7 @@ for index, row in df.iterrows():
     try:
         registrar_log(f"Processando OC: {oc1}/{oc2}")
 
-        # Preencher campos OC
+        # Preencher campos OC e clicar em Buscar (já está correto)
         campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
         campo_oc1.clear()
         campo_oc1.send_keys(oc1)
@@ -90,20 +90,32 @@ for index, row in df.iterrows():
         campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
         campo_oc2.clear()
         campo_oc2.send_keys(oc2)
-
-        # Clicar em Buscar
+        
         wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-        # Esperar e clicar na lupa
+        # --- INÍCIO DA MUDANÇA ---
+
+        # 1. Clicar na lupa de detalhes (como antes)
         wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+        registrar_log(f"Clicou no botão de detalhes. Aguardando a página da lista de materiais...")
 
-        # Clicar em Lista de Materiais
-        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]"))).click()
+        # 2. ESPERAR DIRETAMENTE PELO BOTÃO FINAL
+        #    Esta espera cobre o delay do alerta e o tempo de carregamento da nova página.
+        #    Aumentamos o tempo de espera para 30 segundos para mais segurança.
+        lista_materiais_wait = WebDriverWait(driver, 30)
+        lista_materiais_btn = lista_materiais_wait.until(
+            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]"))
+        )
+        
+        # 3. Clicar no botão para iniciar o download
+        lista_materiais_btn.click()
+        registrar_log(f"Clicou em 'Lista de Materiais'. Download iniciado.")
 
-        # Tempo de espera do download/ajustar dependendo do tamanho do arquivo
+        # --- FIM DA MUDANÇA ---
+        
+        # A lógica de esperar o download e mover o arquivo continua a mesma
         caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
-        # Move o pdf para pasta definida em cedoc_docs
         if caminho_arquivo_baixado:
             nome_arquivo = os.path.basename(caminho_arquivo_baixado)
             destino = os.path.join(PASTA_DESTINO, nome_arquivo)
@@ -119,7 +131,6 @@ for index, row in df.iterrows():
 
     except Exception as e:
         registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
-        # Tenta recarregar a página para se recuperar de um possível erro
         driver.refresh()
         time.sleep(3)
 
