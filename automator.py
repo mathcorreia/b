@@ -55,7 +55,7 @@ except Exception as e:
     raise
 
 # Configurações padronizada do Chrome
-options = webdriver.ChromeOptions() 
+options = webdriver.ChromeOptions()
 options.add_argument("--start-maximized")
 options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
@@ -78,25 +78,23 @@ try:
     original_window = driver.current_window_handle
     wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
     registrar_log("Clicou no link 'GFS'.")
+
     wait.until(EC.number_of_windows_to_be(2))
-    
     for window_handle in driver.window_handles:
         if window_handle != original_window:
             driver.switch_to.window(window_handle)
             break
     registrar_log("Foco alterado para a nova aba da aplicação GFS.")
-    
+
     fse_menu = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]")))
     fse_menu.click()
     registrar_log("Clicou no menu 'FSE'.")
 
-    # --- AJUSTE FINAL ---
-    # Pausa estratégica para a animação do menu dropdown terminar
-    time.sleep(0.5) 
-    
-    busca_fse_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe")))
-    busca_fse_link.click()
-    registrar_log("Navegação concluída. Acessando a página de busca.")
+    # Espera o link "Busca FSe" existir no código e força o clique via JavaScript
+    busca_fse_locator = (By.LINK_TEXT, "Busca FSe")
+    busca_fse_element = wait.until(EC.presence_of_element_located(busca_fse_locator))
+    driver.execute_script("arguments[0].click();", busca_fse_element)
+    registrar_log("Clicou em 'Busca FSe' via JavaScript.")
     # --------------------------------------------------
 
     # Loop de buscar e realizar download
@@ -157,6 +155,10 @@ try:
 
 except Exception as e:
      registrar_log(f"ERRO CRÍTICO fora do loop principal: {e}")
+     # Tira um screenshot no erro crítico também
+     timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
+     nome_screenshot = f"erro_critico_{timestamp_erro}.png"
+     driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
 
 
 registrar_log("Automação finalizada.")
