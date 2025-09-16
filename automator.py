@@ -13,6 +13,7 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # Config geral
 try:
+    # Define o idioma para português para garantir que o nome do mês seja "Setembro", etc.
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 except locale.Error:
     locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
@@ -27,6 +28,7 @@ MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
 PASTA_DESTINO = os.path.join(PASTA_BASE, MES_ATUAL)
 LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
 
+# Garante que a pasta do mês atual exista
 os.makedirs(PASTA_DESTINO, exist_ok=True)
 
 # Registra log
@@ -35,6 +37,7 @@ def registrar_log(mensagem):
         log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
 
 def esperar_download_concluir(pasta_download, timeout=60):
+    """Espera ativamente até que um download seja concluído na pasta especificada."""
     segundos = 0
     while segundos < timeout:
         if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
@@ -82,7 +85,7 @@ for index, row in df.iterrows():
     try:
         registrar_log(f"Processando OC: {oc1}/{oc2}")
 
-        # Preencher campos OC e clicar em Buscar (já está correto)
+        # Preencher campos OC
         campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
         campo_oc1.clear()
         campo_oc1.send_keys(oc1)
@@ -90,32 +93,23 @@ for index, row in df.iterrows():
         campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
         campo_oc2.clear()
         campo_oc2.send_keys(oc2)
-        
+
+        # Clicar em Buscar
         wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-        # --- INÍCIO DA MUDANÇA ---
-
-        # 1. Clicar na lupa de detalhes (como antes)
+        # Esperar e clicar na lupa
         wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
-        registrar_log(f"Clicou no botão de detalhes. Aguardando a página da lista de materiais...")
-
-        # 2. ESPERAR DIRETAMENTE PELO BOTÃO FINAL
-        #    Esta espera cobre o delay do alerta e o tempo de carregamento da nova página.
-        #    Aumentamos o tempo de espera para 30 segundos para mais segurança.
+        
+        # Clicar em Lista de Materiais
+        # Aumentamos o tempo de espera aqui para dar tempo da nova página carregar
         lista_materiais_wait = WebDriverWait(driver, 30)
-        lista_materiais_btn = lista_materiais_wait.until(
-            EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]"))
-        )
-        
-        # 3. Clicar no botão para iniciar o download
+        lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
         lista_materiais_btn.click()
-        registrar_log(f"Clicou em 'Lista de Materiais'. Download iniciado.")
 
-        # --- FIM DA MUDANÇA ---
-        
-        # A lógica de esperar o download e mover o arquivo continua a mesma
+        # Tempo de espera do download/ajustar dependendo do tamanho do arquivo
         caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
+        # Move o pdf para pasta definida em cedoc_docs
         if caminho_arquivo_baixado:
             nome_arquivo = os.path.basename(caminho_arquivo_baixado)
             destino = os.path.join(PASTA_DESTINO, nome_arquivo)
@@ -131,6 +125,7 @@ for index, row in df.iterrows():
 
     except Exception as e:
         registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
+        # Tenta recarregar a página para se recuperar de um possível erro
         driver.refresh()
         time.sleep(3)
 
