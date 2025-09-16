@@ -6,8 +6,8 @@ import locale
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service as ChromeService # Alterado para Chrome
-from webdriver_manager.chrome import ChromeDriverManager # Nova importação
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -54,7 +54,6 @@ except Exception as e:
     registrar_log(f"ERRO CRÍTICO ao ler o Excel: {e}")
     raise
 
-# --- MUDANÇA PARA CHROME ---
 # Configurações padronizada do Chrome
 options = webdriver.ChromeOptions() 
 options.add_argument("--start-maximized")
@@ -65,16 +64,12 @@ options.add_experimental_option("prefs", {
     "safebrowsing.enabled": True
 })
 
-# Inicializa o driver do Chrome usando o webdriver-manager
 driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
-# --- FIM DA MUDANÇA ---
-
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
 input("Faça o login, clique em GFS, depois em FSE > Busca FSe. Quando estiver na tela de busca, pressione ENTER...")
 
-# Adiciona uma pausa de 3 segundos para garantir que a página esteja 100% carregada
 registrar_log("Aguardando a página estabilizar...")
 time.sleep(3)
 
@@ -87,7 +82,7 @@ for index, row in df.iterrows():
 
     try:
         registrar_log(f"Processando OC: {oc1}/{oc2}")
-        # O resto do código é exatamente o mesmo...
+
         campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
         campo_oc1.clear()
         campo_oc1.send_keys(oc1)
@@ -120,15 +115,24 @@ for index, row in df.iterrows():
             registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
 
     except Exception as e:
-        registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
+        # --- NOVA LÓGICA DE SCREENSHOT ---
+        # Tira uma foto da tela no momento do erro
+        timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nome_screenshot = f"erro_oc_{oc1}_{timestamp_erro}.png"
+        caminho_screenshot = os.path.join(os.getcwd(), nome_screenshot)
         try:
-            registrar_log("Tentando se recuperar recarregando a página de busca...")
+            driver.save_screenshot(caminho_screenshot)
+            registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - Screenshot salvo em: {caminho_screenshot}")
+        except Exception as screenshot_error:
+            registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
+
+        # Tenta se recuperar
+        try:
             driver.get(driver.current_url) 
             time.sleep(3)
         except Exception as refresh_error:
             registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
             break
-
 
 registrar_log("Automação finalizada.")
 driver.quit()
