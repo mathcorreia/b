@@ -19,6 +19,14 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Cache Pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
       - name: Install dependencies
         run: |
           pip install -r requirements.txt
@@ -33,4 +41,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: BaixadorNotas
-          path: dist/*.exe
+          path: dist/automator.exe
