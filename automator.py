@@ -70,88 +70,65 @@ driver = webdriver.Edge(service=service, options=options)
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
-input("Faça o login e, quando estiver na página principal do portal, pressione ENTER para continuar...")
+# INSTRUÇÃO MANUAL ATUALIZADA
+input("Faça o login, clique em GFS, depois em FSE > Busca FSe. Quando estiver na tela de busca, pressione ENTER...")
 
-wait = WebDriverWait(driver, 30) # Aumentado o tempo de espera geral para 30s por segurança
+wait = WebDriverWait(driver, 30)
 
-try:
-    # --- ETAPA DE NAVEGAÇÃO AUTOMÁTICA ---
-    registrar_log("Iniciando navegação automática...")
+# Loop de buscar e realizar download
+for index, row in df.iterrows():
+    oc1 = row['OC_antes']
+    oc2 = row['OC_depois']
 
-    # 1. Clica no link "GFS" para entrar no sistema correto
-    gfs_link = wait.until(EC.element_to_be_clickable((By.ID, "L2N10")))
-    gfs_link.click()
-    registrar_log("Clicou no link 'GFS'. Aguardando carregamento da nova página...")
-    
-    # 2. Clica no menu dropdown "FSE" na nova página
-    fse_menu = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]")))
-    fse_menu.click()
-    registrar_log("Clicou no menu 'FSE'.")
+    try:
+        registrar_log(f"Processando OC: {oc1}/{oc2}")
 
-    # 3. Clica no link "Busca FSe"
-    busca_fse_link = wait.until(EC.element_to_be_clickable((By.LINK_TEXT, "Busca FSe")))
-    busca_fse_link.click()
-    registrar_log("Navegação concluída. Acessando a página de busca.")
-    # ------------------------------------
+        # Preencher campos OC
+        campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
+        campo_oc1.clear()
+        campo_oc1.send_keys(oc1)
 
-    # Loop de buscar e realizar download
-    for index, row in df.iterrows():
-        oc1 = row['OC_antes']
-        oc2 = row['OC_depois']
+        campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
+        campo_oc2.clear()
+        campo_oc2.send_keys(oc2)
 
-        try:
-            registrar_log(f"Processando OC: {oc1}/{oc2}")
+        # Clicar em Buscar
+        wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
 
-            # Preencher campos OC
-            campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
-            campo_oc1.clear()
-            campo_oc1.send_keys(oc1)
+        # Esperar e clicar na lupa
+        wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+        
+        # Clicar em Lista de Materiais
+        lista_materiais_wait = WebDriverWait(driver, 30)
+        lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
+        lista_materiais_btn.click()
 
-            campo_oc2 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']")))
-            campo_oc2.clear()
-            campo_oc2.send_keys(oc2)
+        # Tempo de espera do download/ajustar dependendo do tamanho do arquivo
+        caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
 
-            # Clicar em Buscar
-            wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
+        # Move o pdf para pasta definida em cedoc_docs
+        if caminho_arquivo_baixado:
+            nome_arquivo = os.path.basename(caminho_arquivo_baixado)
+            destino = os.path.join(PASTA_DESTINO, nome_arquivo)
 
-            # Esperar e clicar na lupa
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
-            
-            # Clicar em Lista de Materiais
-            lista_materiais_wait = WebDriverWait(driver, 30)
-            lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
-            lista_materiais_btn.click()
-
-            # Tempo de espera do download/ajustar dependendo do tamanho do arquivo
-            caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
-
-            # Move o pdf para pasta definida em cedoc_docs
-            if caminho_arquivo_baixado:
-                nome_arquivo = os.path.basename(caminho_arquivo_baixado)
-                destino = os.path.join(PASTA_DESTINO, nome_arquivo)
-
-                if not os.path.exists(destino):
-                    shutil.move(caminho_arquivo_baixado, destino)
-                    registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
-                else:
-                    os.remove(caminho_arquivo_baixado)
-                    registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
+            if not os.path.exists(destino):
+                shutil.move(caminho_arquivo_baixado, destino)
+                registrar_log(f"Movido: {nome_arquivo} para {PASTA_DESTINO}")
             else:
-                registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
+                os.remove(caminho_arquivo_baixado)
+                registrar_log(f"Arquivo já existe no destino: {nome_arquivo}. Download duplicado removido.")
+        else:
+            registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
 
-        except Exception as e:
-            registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
-            try:
-                # Se algo der errado, tenta voltar para a URL de busca e continuar
-                registrar_log("Tentando se recuperar voltando para a tela de busca...")
-                driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
-                time.sleep(3)
-            except Exception as refresh_error:
-                registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
-                break
-
-except Exception as e:
-    registrar_log(f"ERRO CRÍTICO fora do loop principal: {e}")
+    except Exception as e:
+        registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
+        try:
+            registrar_log("Tentando se recuperar recarregando a página de busca...")
+            driver.get(driver.current_url) # Recarrega a página atual para limpar o formulário
+            time.sleep(3)
+        except Exception as refresh_error:
+            registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
+            break
 
 
 registrar_log("Automação finalizada.")
