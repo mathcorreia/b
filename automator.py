@@ -13,7 +13,6 @@ from selenium.webdriver.support import expected_conditions as EC
 
 # Config geral
 try:
-    # Define o idioma para português para garantir que o nome do mês seja "Setembro", etc.
     locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
 except locale.Error:
     locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
@@ -28,7 +27,6 @@ MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
 PASTA_DESTINO = os.path.join(PASTA_BASE, MES_ATUAL)
 LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
 
-# Garante que a pasta do mês atual exista
 os.makedirs(PASTA_DESTINO, exist_ok=True)
 
 # Registra log
@@ -37,7 +35,6 @@ def registrar_log(mensagem):
         log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
 
 def esperar_download_concluir(pasta_download, timeout=60):
-    """Espera ativamente até que um download seja concluído na pasta especificada."""
     segundos = 0
     while segundos < timeout:
         if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
@@ -68,7 +65,7 @@ options.add_experimental_option("prefs", {
     "safebrowsing.enabled": True
 })
 
-service = Service()  # EdgeDriver deve estar no PATH
+service = Service()
 driver = webdriver.Edge(service=service, options=options)
 
 # Aguarda o login manual
@@ -76,6 +73,17 @@ driver.get("https://web.embraer.com.br/")
 input("Faça login manualmente, entre na página para baixar notas e pressione ENTER para continuar...")
 
 wait = WebDriverWait(driver, 20)
+
+try:
+    # O robô vai esperar o iframe aparecer e mudar o foco para dentro dele.
+    # A maioria dos sites usa o primeiro iframe (índice 0).
+    registrar_log("Procurando por um iframe para entrar...")
+    wait.until(EC.frame_to_be_available_and_switch_to_it((By.TAG_NAME, "iframe")))
+    registrar_log("SUCESSO: Foco alterado para dentro do iframe.")
+except Exception as e:
+    # Se não encontrar um iframe, ele assume que o formulário está na página principal.
+    registrar_log(f"AVISO: Nenhum iframe encontrado. Continuando na página principal. Erro (se houver): {e}")
+# -----------------------------
 
 # Loop de buscar e realizar download
 for index, row in df.iterrows():
@@ -101,7 +109,6 @@ for index, row in df.iterrows():
         wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
         
         # Clicar em Lista de Materiais
-        # Aumentamos o tempo de espera aqui para dar tempo da nova página carregar
         lista_materiais_wait = WebDriverWait(driver, 30)
         lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
         lista_materiais_btn.click()
@@ -125,10 +132,12 @@ for index, row in df.iterrows():
 
     except Exception as e:
         registrar_log(f"ERRO com OC {oc1}/{oc2}: {e}")
-        # Tenta recarregar a página para se recuperar de um possível erro
-        driver.refresh()
-        time.sleep(3)
-
+        try:
+            driver.refresh()
+            time.sleep(3)
+        except Exception as refresh_error:
+            registrar_log(f"AVISO: Não foi possível recarregar. A janela pode ter sido fechada. Erro: {refresh_error}")
+            break
 
 registrar_log("Automação finalizada.")
 driver.quit()
