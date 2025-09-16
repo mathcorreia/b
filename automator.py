@@ -89,7 +89,6 @@ try:
 
     # --- FIM DA PARTE AUTOMÁTICA - INÍCIO DA PAUSA 2 ---
     input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
-    # --------------------------------------------------
 
     # Loop de buscar e realizar download
     for index, row in df.iterrows():
@@ -111,11 +110,12 @@ try:
 
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # --- ADIÇÃO 1: PAUSA E ESPERA MAIS ROBUSTA ---
             # Pausa extra para a nova página carregar seus componentes antes da busca pelo botão
             time.sleep(1)
             lista_materiais_wait = WebDriverWait(driver, 30)
-            lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(),'Lista de Materiais')]")))
+            
+            # Seletor robusto que procura o texto em qualquer lugar dentro do botão
+            lista_materiais_btn = lista_materiais_wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(.,'Lista de Materiais')]")))
             lista_materiais_btn.click()
 
             caminho_arquivo_baixado = esperar_download_concluir(DOWNLOAD_DIR)
@@ -133,7 +133,7 @@ try:
             else:
                 registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
             
-            # --- ADIÇÃO 2: RETORNO PARA A PÁGINA DE BUSCA ---
+            # Retorno para a página de busca para continuar o loop
             registrar_log(f"Processo da OC {oc1}/{oc2} concluído. Voltando para a página de busca.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
 
@@ -148,7 +148,6 @@ try:
                 registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
             
             try:
-                # Se der erro, o melhor a fazer é pedir para o usuário recolocar na tela de busca
                 input(f"Ocorreu um erro com a OC {oc1}/{oc2}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar com a próxima OC...")
             except Exception as refresh_error:
                 registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
@@ -161,8 +160,7 @@ except Exception as e:
         nome_screenshot = f"erro_critico_{timestamp_erro}.png"
         driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
      except:
-         pass # Se nem o screenshot funcionar, apenas ignora
-
+         pass 
 
 registrar_log("Automação finalizada.")
 driver.quit()
