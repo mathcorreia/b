@@ -55,7 +55,7 @@ except Exception as e:
     raise
 
 # Configurações padronizada do Chrome
-options = webdriver.ChromeOptions()
+options = webdriver.ChromeOptions() 
 options.add_argument("--start-maximized")
 options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR,
@@ -66,19 +66,20 @@ options.add_experimental_option("prefs", {
 
 driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
 
-# Aguarda o login manual
+# Aguarda o login manual (PAUSA 1)
 driver.get("https://web.embraer.com.br/irj/portal")
 input("Faça o login e, quando estiver na página principal do portal, pressione ENTER para continuar...")
 
 wait = WebDriverWait(driver, 30)
 
 try:
-    # --- ETAPA DE NAVEGAÇÃO AUTOMÁTICA E ROBUSTA ---
-    registrar_log("Iniciando navegação automática...")
+    # --- ETAPA DE NAVEGAÇÃO SEMI-AUTOMÁTICA ---
+    registrar_log("Iniciando navegação para GFS...")
     original_window = driver.current_window_handle
     wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
     registrar_log("Clicou no link 'GFS'.")
 
+    # Espera e muda o foco para a nova aba
     wait.until(EC.number_of_windows_to_be(2))
     for window_handle in driver.window_handles:
         if window_handle != original_window:
@@ -86,15 +87,8 @@ try:
             break
     registrar_log("Foco alterado para a nova aba da aplicação GFS.")
 
-    fse_menu = wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'FSE')]")))
-    fse_menu.click()
-    registrar_log("Clicou no menu 'FSE'.")
-
-    # Espera o link "Busca FSe" existir no código e força o clique via JavaScript
-    busca_fse_locator = (By.LINK_TEXT, "Busca FSe")
-    busca_fse_element = wait.until(EC.presence_of_element_located(busca_fse_locator))
-    driver.execute_script("arguments[0].click();", busca_fse_element)
-    registrar_log("Clicou em 'Busca FSe' via JavaScript.")
+    # --- FIM DA PARTE AUTOMÁTICA - INÍCIO DA PAUSA 2 ---
+    input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
     # --------------------------------------------------
 
     # Loop de buscar e realizar download
@@ -147,18 +141,20 @@ try:
                 registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
             
             try:
-                driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
-                time.sleep(3)
+                # Se der erro, o melhor a fazer é pedir para o usuário recolocar na tela de busca
+                input(f"Ocorreu um erro com a OC {oc1}/{oc2}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar com a próxima OC...")
             except Exception as refresh_error:
                 registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
                 break
 
 except Exception as e:
      registrar_log(f"ERRO CRÍTICO fora do loop principal: {e}")
-     # Tira um screenshot no erro crítico também
-     timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-     nome_screenshot = f"erro_critico_{timestamp_erro}.png"
-     driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
+     try:
+        timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nome_screenshot = f"erro_critico_{timestamp_erro}.png"
+        driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
+     except:
+         pass # Se nem o screenshot funcionar, apenas ignora
 
 
 registrar_log("Automação finalizada.")
