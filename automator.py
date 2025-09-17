@@ -9,8 +9,8 @@ from tkinter import messagebox
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
-from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.edge.service import Service as EdgeService
+from webdriver_manager.microsoft import EdgeChromiumDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
@@ -157,13 +157,13 @@ except Exception as e:
     raise
 
 # Configurações padronizada do Chrome
-options = webdriver.ChromeOptions() 
+options = webdriver.EdgeOptions()
 options.add_argument("--start-maximized")
 options.add_experimental_option("prefs", {
     "download.default_directory": DOWNLOAD_DIR, "download.prompt_for_download": False,
     "download.directory_upgrade": True, "safebrowsing.enabled": True
 })
-driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+driver = webdriver.Edge(service=EdgeService(EdgeChromiumDriverManager().install()), options=options)
 
 # Aguarda o login manual
 driver.get("https://web.embraer.com.br/irj/portal")
