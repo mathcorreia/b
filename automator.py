@@ -4,7 +4,7 @@ import shutil
 import pandas as pd
 import locale
 import re
-import traceback # Importado para capturar o erro detalhado
+import traceback # <-- ADIÇÃO DA LINHA FALTANTE
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
@@ -72,8 +72,8 @@ try:
         return None
 
     def processar_uma_os(driver, wait, os_num, oc1, oc2):
-        # A lógica interna desta função continua a mesma
-        pass # Esta função não será usada nesta versão de teste simplificada
+        # Esta função não será usada nesta versão de teste simplificada
+        pass 
 
     # Le os dados do excel
     registrar_log("Lendo arquivo Excel...")
@@ -115,7 +115,9 @@ except Exception as e:
     
     # Registra o erro detalhado no log
     try:
-        LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
+        # Tenta definir o LOG_PATH uma última vez se falhou antes
+        if 'LOG_PATH' not in locals():
+            LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
         registrar_log("--- ERRO CRÍTICO ---")
         registrar_log(mensagem_final)
     except:
