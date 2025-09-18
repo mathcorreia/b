@@ -114,7 +114,7 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Lógica "Tudo ou Nada"
+            # Lógica "Tudo ou Nada" com seletores robustos
             time.sleep(1)
             seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
             wait.until(EC.element_to_be_clickable(seletor_lm)).click()
@@ -207,7 +207,7 @@ try:
     if df.empty:
         messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
     else:
-        # Configurações do Navegador
+        # Configurações do Navegador (Método Manual)
         caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
         service = ChromeService(executable_path=caminho_chromedriver)
         options = webdriver.ChromeOptions() 
