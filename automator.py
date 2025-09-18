@@ -67,7 +67,7 @@ try:
     num_mes_atual = hoje.month + 100
 
     DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
-    PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
+    PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs'
     PASTA_BASE_ANO_ATUAL = os.path.join(PASTA_RAIZ_VERIFICACAO, str(hoje.year))
     MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
     PASTA_MES = os.path.join(PASTA_BASE_ANO_ATUAL, MES_ATUAL)
