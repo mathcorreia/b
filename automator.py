@@ -11,24 +11,47 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
-# A importação do webdriver-manager foi REMOVIDA
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# --- INICIALIZAÇÃO DA INTERFACE GRÁFICA ---
-# Cria uma janela raiz oculta para os pop-ups
+class StatusWindow:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Status da Automação")
+        self.root.geometry("450x170")
+        self.root.resizable(False, False)
+        # Centraliza a janela na tela
+        self.root.eval('tk::PlaceWindow . center')
+        
+        self.label = tk.Label(self.root, text="", font=("Arial", 16, "bold"), wraplength=420)
+        self.label.pack(expand=True, fill="both", padx=15, pady=15)
+        self.ok_button = tk.Button(self.root, text="OK", command=self.root.destroy, state="disabled", width=15, font=("Arial", 10, "bold"))
+        self.ok_button.pack(pady=(0, 15))
+
+    def show_wait(self, message):
+        self.label.config(text=message, fg="#E69500") # Laranja/Amarelo
+        self.ok_button.config(state="disabled")
+        self.root.deiconify()
+        self.root.update()
+
+    def show_ready(self, message):
+        self.label.config(text=message, fg="#008A00") # Verde
+        self.ok_button.config(state="normal")
+        self.root.deiconify()
+        self.root.mainloop()
+
+    def hide(self):
+        self.root.withdraw()
+
+# Oculta a janela raiz principal do Tkinter que não será usada
 root = tk.Tk()
 root.withdraw()
-# -----------------------------------------
 
-# Função de log precisa ser definida antes do bloco principal
 def registrar_log(mensagem):
-    # O LOG_PATH será definido dentro do bloco try principal
     with open(LOG_PATH, 'a', encoding='utf-8') as log:
         log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
 
-# --- BLOCO PRINCIPAL COM CAPTURA DE ERRO ---
 try:
     # Config geral
     try:
@@ -174,13 +197,17 @@ try:
                     os_num = nome_arquivo.split('_')[0]
                     if os_num.isdigit():
                         arquivos_existentes.add(os_num)
+    
     if arquivos_existentes:
-       df['OS'] = df['OS'].astype(str)
-       df_original_len = len(df) # <-- Guarda o tamanho original
-       df = df[~df['OS'].isin(arquivos_existentes)]
-       removidos = df_original_len - len(df) # <-- Calcula a diferença
-       registrar_log(f"{removidos} OSs foram removidas da lista por já terem sido baixadas.")
-
+        df['OS'] = df['OS'].astype(str)
+        df_original_len = len(df)
+        df = df[~df['OS'].isin(arquivos_existentes)]
+        removidos = df_original_len - len(df)
+        registrar_log(f"Verificação concluída. {removidos} OSs foram removidas da lista por já terem sido baixadas nos últimos 2 anos.")
+    else:
+        registrar_log("Verificação concluída. Nenhuma duplicidade encontrada.")
+    registrar_log(f"Total de {len(df)} itens restantes para processar.")
+    
     if df.empty:
         messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
     else:
@@ -197,13 +224,18 @@ try:
         })
         driver = webdriver.Chrome(service=service, options=options)
 
-        # Login e Navegação
+        # Login e Navegação com a nova janela de status
+        janela_status = StatusWindow()
+        janela_status.hide() # Começa oculta
+
         driver.get("https://web.embraer.com.br/irj/portal")
-        messagebox.showinfo("Ação Necessária (1/2)", "Faça o login no portal e, quando a página principal carregar, clique em OK.")
+        janela_status.show_ready("Faça o login no portal e, quando a página principal carregar, clique em OK.")
 
         wait = WebDriverWait(driver, 30)
         
-        registrar_log("Iniciando navegação para GFS e trocando de aba...")
+        # Navegação semi-automática
+        janela_status.show_wait("POR FAVOR, AGUARDE...\nNavegando para o sistema GFS e trocando de aba.")
+        
         original_window = driver.current_window_handle
         wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
         wait.until(EC.number_of_windows_to_be(2))
@@ -213,7 +245,7 @@ try:
                 break
         registrar_log("Foco alterado para a nova aba da aplicação GFS.")
         
-        messagebox.showinfo("Ação Necessária (2/2)", "Robô na aba correta.\n\nAGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, clique em OK.")
+        janela_status.show_ready("AGORA PODE CLICAR EM OK\n\nNo navegador, clique em 'FSE' > 'Busca FSe' e, quando a tela carregar, clique em OK aqui.")
 
         # Loop de processamento principal
         registrar_log("Iniciando processamento principal do Excel...")
@@ -267,7 +299,7 @@ try:
 except Exception as e:
      error_details = traceback.format_exc()
      registrar_log(f"ERRO CRÍTICO: {error_details}")
-     messagebox.showerror("Erro Crítico", f"Ocorreu um erro grave e a automação será encerrada.\n\nVerifique o 'log_automacao.txt'.\n\nErro: {e}")
+     messagebox.showerror("Erro Crítico", f"Ocorreu um erro grave e a automação será encerrada.\n\nVerifique o 'log_automacao.txt'.\n\nErro: {error_details}")
 
 finally:
     if 'driver' in locals() and 'driver' in vars() and driver:
