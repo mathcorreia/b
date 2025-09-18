@@ -114,7 +114,7 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Lógica "Tudo ou Nada" com seletores robustos
+            # Lista de Materiais (LM)
             time.sleep(1)
             seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
             wait.until(EC.element_to_be_clickable(seletor_lm)).click()
@@ -127,6 +127,7 @@ try:
             else:
                 raise Exception(f"Download (LM) não concluído para a OS {os_num}")
             
+            # Lista de Peças (LP)
             time.sleep(2)
             seletor_lp = (By.XPATH, "//button[contains(., 'Lista de Peças')]")
             wait.until(EC.element_to_be_clickable(seletor_lp)).click()
@@ -139,6 +140,7 @@ try:
             else:
                 raise Exception(f"Download (LP) não concluído para a OS {os_num}")
 
+            # Ficha de Serviço (FS)
             time.sleep(2)
             seletor_fs = (By.XPATH, "//button[contains(., 'Imprimir')]")
             wait.until(EC.element_to_be_clickable(seletor_fs)).click()
@@ -207,7 +209,7 @@ try:
     if df.empty:
         messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
     else:
-        # Configurações do Navegador (Método Manual)
+        # Configurações do Navegador
         caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
         service = ChromeService(executable_path=caminho_chromedriver)
         options = webdriver.ChromeOptions() 
