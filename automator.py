@@ -114,9 +114,9 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Lista de Materiais (LM)
+            # Lógica "Tudo ou Nada"
             time.sleep(1)
-            seletor_lm = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]")
+            seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
             wait.until(EC.element_to_be_clickable(seletor_lm)).click()
             caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
             if caminho_lm:
@@ -127,9 +127,8 @@ try:
             else:
                 raise Exception(f"Download (LM) não concluído para a OS {os_num}")
             
-            # Lista de Peças (LP)
             time.sleep(2)
-            seletor_lp = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[2]")
+            seletor_lp = (By.XPATH, "//button[contains(., 'Lista de Peças')]")
             wait.until(EC.element_to_be_clickable(seletor_lp)).click()
             caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
             if caminho_lp:
@@ -140,9 +139,8 @@ try:
             else:
                 raise Exception(f"Download (LP) não concluído para a OS {os_num}")
 
-            # Ficha de Serviço (FS)
             time.sleep(2)
-            seletor_fs = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[2]")
+            seletor_fs = (By.XPATH, "//button[contains(., 'Imprimir')]")
             wait.until(EC.element_to_be_clickable(seletor_fs)).click()
             caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
             if caminho_fs:
@@ -171,7 +169,6 @@ try:
             return False
 
     # Le os dados do excel
-    registrar_log("Lendo arquivo Excel...")
     df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
     df.rename(columns={df.columns[0]: 'OS'}, inplace=True) 
     df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
@@ -216,17 +213,16 @@ try:
         options = webdriver.ChromeOptions() 
         options.add_argument("--start-maximized")
         options.add_experimental_option("prefs", {
-            "download.default_directory": DOWNLOAD_DIR,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True
+            "download.default_directory": DOWNLOAD_DIR, "download.prompt_for_download": False,
+            "download.directory_upgrade": True, "safebrowsing.enabled": True
         })
         driver = webdriver.Chrome(service=service, options=options)
 
-        # Login e Navegação
+        # Inicia a janela de status e a esconde
         janela_status = StatusWindow()
         janela_status.hide()
 
+        # Login e Navegação
         driver.get("https://web.embraer.com.br/irj/portal")
         janela_status.show_ready("Faça o login no portal e, quando a página principal carregar, clique em OK.")
 
