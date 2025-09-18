@@ -3,6 +3,8 @@ import time
 import shutil
 import pandas as pd
 import locale
+import re
+import traceback
 import tkinter as tk
 from tkinter import messagebox
 from datetime import datetime
@@ -12,11 +14,43 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException
 
-# --- Inicialização da Interface Visual (para pop-ups) ---
+# --- JANELA DE STATUS VISUAL ---
+class StatusWindow:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Status da Automação")
+        self.root.geometry("450x170")
+        self.root.resizable(False, False)
+        # Centraliza a janela na tela
+        self.root.eval('tk::PlaceWindow . center')
+        
+        self.label = tk.Label(self.root, text="", font=("Arial", 16, "bold"), wraplength=420)
+        self.label.pack(expand=True, fill="both", padx=15, pady=15)
+        self.ok_button = tk.Button(self.root, text="OK", command=self.root.destroy, state="disabled", width=15, font=("Arial", 10, "bold"))
+        self.ok_button.pack(pady=(0, 15))
+
+    def show_wait(self, message):
+        self.label.config(text=message, fg="#E69500") # Amarelo/Laranja
+        self.ok_button.config(state="disabled")
+        self.root.deiconify() # Garante que a janela seja visível
+        self.root.update()
+
+    def show_ready(self, message):
+        self.label.config(text=message, fg="#008A00") # Verde
+        self.ok_button.config(state="normal")
+        self.root.deiconify()
+        self.root.mainloop()
+
+    def hide(self):
+        self.root.withdraw()
+
+# Oculta a janela raiz principal do Tkinter que não será usada
 root = tk.Tk()
 root.withdraw()
 
+# --- BLOCO PRINCIPAL ---
 try:
     # Config geral
     try:
@@ -29,17 +63,14 @@ try:
     num_mes_atual = hoje.month + 100
 
     DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
-    # Caminho raiz para a verificação de duplicidade
-    PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs'
-    # Caminho base para salvar os arquivos do ano atual
+    PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
     PASTA_BASE_ANO_ATUAL = os.path.join(PASTA_RAIZ_VERIFICACAO, str(hoje.year))
-    
     MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
     PASTA_DESTINO = os.path.join(PASTA_BASE_ANO_ATUAL, MES_ATUAL)
     LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
 
     os.makedirs(PASTA_DESTINO, exist_ok=True)
-
+    
     # Registra log
     def registrar_log(mensagem):
         with open(LOG_PATH, 'a', encoding='utf-8') as log:
@@ -51,8 +82,9 @@ try:
             if item.endswith(".pdf"):
                 try:
                     os.remove(os.path.join(pasta_download, item))
-                except OSError:
-                    pass
+                except OSError as e:
+                    registrar_log(f"Aviso: Não foi possível limpar o arquivo antigo {item}. Erro: {e}")
+
         while segundos < timeout:
             if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
                 arquivos_pdf = [os.path.join(pasta_download, f) for f in os.listdir(pasta_download) if f.endswith('.pdf')]
@@ -64,28 +96,25 @@ try:
 
     # Le os dados do excel ex: oc/oclinha
     df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
-    # Renomeia as colunas para 'OS' e 'OC' para clareza
-    df.rename(columns={df.columns[0]: 'OS', df.columns[1]: 'OC'}, inplace=True)
-    df[['OC_antes', 'OC_depois']] = df['OC'].astype(str).str.split('/', expand=True, n=1)
-    registrar_log(f"Arquivo Excel lido. {len(df)} itens na lista inicial.")
-
-    # --- LÓGICA DE VERIFICAÇÃO DE NOTAS RETROATIVAS ---
+    if 'OS' not in df.columns:
+        df.rename(columns={df.columns[0]: 'OS'}, inplace=True)
+    df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
+    registrar_log(f"Arquivo Excel lido. Total de {len(df)} itens na lista inicial.")
+    
+    # Verificação de Duplicidade Retroativa
     registrar_log("Iniciando verificação retroativa de duplicidade (até 2 anos). Isso pode levar alguns minutos...")
     arquivos_existentes = set()
     data_limite = hoje - pd.DateOffset(years=2)
-    
     if os.path.exists(PASTA_RAIZ_VERIFICACAO):
         for root_dir, dirs, files in os.walk(PASTA_RAIZ_VERIFICACAO):
             nome_da_pasta_atual = os.path.basename(root_dir)
             try:
                 if len(nome_da_pasta_atual) == 4 and nome_da_pasta_atual.isdigit():
-                    ano_da_pasta = int(nome_da_pasta_atual)
-                    if ano_da_pasta < data_limite.year:
-                        dirs[:] = [] # Otimização: não entra em pastas de anos antigos
+                    if int(nome_da_pasta_atual) < data_limite.year:
+                        dirs[:] = []
                         continue
             except ValueError:
                 pass
-            
             for nome_arquivo in files:
                 if nome_arquivo.endswith(".pdf"):
                     os_num = nome_arquivo.split('_')[0]
@@ -101,13 +130,12 @@ try:
     else:
         registrar_log("Verificação concluída. Nenhuma duplicidade encontrada.")
     registrar_log(f"Total de {len(df)} itens restantes para processar.")
-    # -------------------------------------------------------
-
+    
     if df.empty:
         messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
     else:
         # Configurações padronizada do Chrome
-        options = webdriver.ChromeOptions() 
+        options = webdriver.ChromeOptions()
         options.add_argument("--start-maximized")
         options.add_experimental_option("prefs", {
             "download.default_directory": DOWNLOAD_DIR,
@@ -116,20 +144,24 @@ try:
             "safebrowsing.enabled": True
         })
         driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
+        
+        janela_status = StatusWindow()
+        janela_status.hide()
 
         # Aguarda o login manual (PAUSA 1)
         driver.get("https://web.embraer.com.br/irj/portal")
-        input("Faça o login e, quando estiver na página principal do portal, pressione ENTER para continuar...")
+        janela_status.show_ready("Faça o login e, quando estiver na página principal do portal, clique em OK para continuar...")
 
         wait = WebDriverWait(driver, 30)
 
         # --- ETAPA DE NAVEGAÇÃO SEMI-AUTOMÁTICA ---
+        janela_status.show_wait("POR FAVOR, AGUARDE...\nNavegando para o sistema GFS e trocando de aba.")
+        
         registrar_log("Iniciando navegação para GFS...")
         original_window = driver.current_window_handle
         wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
         registrar_log("Clicou no link 'GFS'.")
 
-        # Espera e muda o foco para a nova aba
         wait.until(EC.number_of_windows_to_be(2))
         for window_handle in driver.window_handles:
             if window_handle != original_window:
@@ -137,7 +169,7 @@ try:
                 break
         registrar_log("Foco alterado para a nova aba da aplicação GFS.")
 
-        input("Robô na aba correta. AGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, pressione ENTER...")
+        janela_status.show_ready("AGORA PODE CLICAR EM OK\n\nNo navegador, clique em 'FSE' > 'Busca FSe' e, quando a tela carregar, clique em OK aqui.")
         
         # Loop de buscar e realizar download
         for index, row in df.iterrows():
@@ -146,7 +178,7 @@ try:
             oc2 = row['OC_depois']
 
             try:
-                registrar_log(f"Processando OS: {os_num} | OC: {oc1}/{oc2}")
+                registrar_log(f"Processando OC: {oc1}/{oc2}")
                 
                 campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
                 campo_oc1.clear()
@@ -180,35 +212,40 @@ try:
                         os.remove(caminho_arquivo_baixado)
                         registrar_log(f"Arquivo já existe no destino: {novo_nome_arquivo}. Download duplicado removido.")
                 else:
-                    registrar_log(f"ERRO: Download não concluído a tempo para a OS {os_num}")
+                    registrar_log(f"ERRO: Download não concluído a tempo para a OC {oc1}/{oc2}")
                 
-                registrar_log(f"Processo da OS {os_num} concluído. Voltando para a página de busca.")
+                registrar_log(f"Processo da OC {oc1}/{oc2} concluído. Voltando para a página de busca.")
                 driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
 
             except Exception as e:
                 timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-                nome_screenshot = f"erro_os_{os_num}_{timestamp_erro}.png"
+                nome_screenshot = f"erro_oc_{str(oc1).replace('/', '-')}_{timestamp_erro}.png"
                 caminho_screenshot = os.path.join(os.getcwd(), nome_screenshot)
                 try:
                     driver.save_screenshot(caminho_screenshot)
-                    registrar_log(f"ERRO com OS {os_num}: {e} - Screenshot salvo em: {caminho_screenshot}")
+                    registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - Screenshot salvo em: {caminho_screenshot}")
                 except Exception as screenshot_error:
-                    registrar_log(f"ERRO com OS {os_num}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
+                    registrar_log(f"ERRO com OC {oc1}/{oc2}: {e} - FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
                 
                 try:
-                    input(f"Ocorreu um erro com a OS {os_num}. Por favor, coloque na tela de busca novamente e pressione ENTER para continuar...")
+                    messagebox.showerror("Erro em OC", f"Ocorreu um erro com a OC {oc1}/{oc2}.\n\nPor favor, coloque na tela de busca novamente e clique em OK para continuar com a próxima OC.")
                 except Exception as refresh_error:
                     registrar_log(f"AVISO: Falha crítica ao tentar se recuperar. Erro: {refresh_error}")
                     break
+        
+        if 'janela_status' in locals():
+            try:
+                janela_status.root.destroy()
+            except:
+                pass
+        
+        messagebox.showinfo("Automação Concluída", "Processo finalizado. Verifique os logs para detalhes.")
 
 except Exception as e:
-     registrar_log(f"ERRO CRÍTICO fora do loop principal: {e}")
-     try:
-        timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nome_screenshot = f"erro_critico_{timestamp_erro}.png"
-        driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
-     except:
-         pass
+     error_details = traceback.format_exc()
+     registrar_log(f"ERRO CRÍTICO: {error_details}")
+     messagebox.showerror("Erro Crítico", f"Ocorreu um erro grave e a automação será encerrada.\n\nVerifique o 'log_automacao.txt'.\n\nErro: {error_details}")
+
 finally:
     if 'driver' in locals() and 'driver' in vars() and driver:
         registrar_log("Automação finalizada.")
