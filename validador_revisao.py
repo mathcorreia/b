@@ -314,8 +314,9 @@ class ValidadorGUI:
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
             
             # --- CORREÇÃO: Mudar para o iframe aninhado ---
-            self.registrar_log("Aguardando e mudando para o iframe aninhado 'ivuFrm_page0ivu0'...")
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.NAME, "ivuFrm_page0ivu2"))) # Usando NAME, pode ser mais estável
+            self.registrar_log("Aguardando e mudando para o iframe aninhado...")
+            # Tentativa com o segundo ID que você encontrou
+            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "ivuFrm_page0ivu0")))
             
             self.registrar_log("Mundança para iframes bem-sucedida. Aguardando campo de busca...")
 
