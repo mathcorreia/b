@@ -235,21 +235,35 @@ class AutomatorGUI:
 
 
     def esperar_download_concluir(self, pasta_download, timeout=60):
-        # Limpa PDFs antigos para evitar pegar o arquivo errado
-        time.sleep(1) # Dá um tempo para o download iniciar
-        for item in os.listdir(pasta_download):
-            if item.endswith(".pdf"):
-                try: os.remove(os.path.join(pasta_download, item))
-                except OSError: pass
+        """
+        Espera um novo arquivo PDF aparecer na pasta de downloads sem apagar nada.
+        """
+        # Pega o estado da pasta ANTES do download
+        arquivos_antes = set(f for f in os.listdir(pasta_download) if f.endswith('.pdf'))
         
         segundos = 0
         while segundos < timeout:
+            # Espera o arquivo temporário (.crdownload) desaparecer
             if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
-                arquivos_pdf = [os.path.join(pasta_download, f) for f in os.listdir(pasta_download) if f.endswith('.pdf')]
-                if arquivos_pdf:
-                    return max(arquivos_pdf, key=os.path.getmtime)
+                # Pega o estado da pasta DEPOIS do download
+                arquivos_depois = set(f for f in os.listdir(pasta_download) if f.endswith('.pdf'))
+                
+                # Encontra qual é o novo arquivo
+                novos_arquivos = arquivos_depois - arquivos_antes
+                
+                if novos_arquivos:
+                    # Pega o nome do novo arquivo
+                    nome_novo_arquivo = novos_arquivos.pop()
+                    caminho_completo = os.path.join(pasta_download, nome_novo_arquivo)
+                    self.registrar_log(f"Download detectado: {nome_novo_arquivo}")
+                    # Pequena pausa para garantir que o sistema liberou o arquivo
+                    time.sleep(0.5) 
+                    return caminho_completo
+            
             time.sleep(1)
             segundos += 1
+            
+        self.registrar_log(f"ERRO: Timeout ({timeout}s) esperando download. Nenhum novo arquivo .pdf foi detectado.")
         return None
 
     def processar_uma_os(self, wait, row, arquivos_existentes, pastas_destino):
@@ -278,6 +292,7 @@ class AutomatorGUI:
                     self.registrar_log(f"SKIP ({tipo}): Documento para OS {os_num} já existe.")
                     continue
                 try:
+                    # Delay mantido para estabilidade antes do clique
                     time.sleep(2)
                     wait.until(EC.element_to_be_clickable((By.XPATH, info['seletor']))).click()
                     caminho_arquivo = self.esperar_download_concluir(DOWNLOAD_DIR)
