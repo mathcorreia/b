@@ -27,6 +27,8 @@ class AutomatorGUI:
         self.root = root
         self.root.title("Automator Embraer Produtivo - Painel de Controle")
         self.root.geometry("850x650")
+        # --- NOVO: Faz a janela ficar sempre na frente ---
+        self.root.attributes('-topmost', True)
         
         # Evento para sincronizar a thread de automação com as ações do usuário na GUI
         self.user_action_event = threading.Event()
@@ -168,22 +170,18 @@ class AutomatorGUI:
                                     arquivos_existentes.add(f"{os_num}_LP.pdf")
                                     arquivos_existentes.add(f"{os_num}_FS.pdf")
             
-            # Filtrar o DataFrame
             df['OS_str'] = df['OS'].astype(str)
-            df_original_len = len(df)
-            
-            # Uma OS é removida se TODOS os 3 documentos (LM, LP, FS) já existirem
             df['ja_existe_lm'] = df['OS_str'].apply(lambda x: f"{x}_LM.pdf" in arquivos_existentes)
             df['ja_existe_lp'] = df['OS_str'].apply(lambda x: f"{x}_LP.pdf" in arquivos_existentes)
             df['ja_existe_fs'] = df['OS_str'].apply(lambda x: f"{x}_FS.pdf" in arquivos_existentes)
             df_filtrado = df[~(df['ja_existe_lm'] & df['ja_existe_lp'] & df['ja_existe_fs'])]
             
-            removidos = df_original_len - len(df_filtrado)
+            removidos = len(df) - len(df_filtrado)
             self.registrar_log(f"Verificação concluída. {removidos} OSs foram removidas por já estarem completas.")
 
             if df_filtrado.empty:
                 self.update_status("Todos os itens já foram baixados. Automação finalizada.", "#008A00")
-                self.action_button.pack_forget() # Oculta o botão principal
+                self.action_button.pack_forget()
                 return
 
             # --- CONFIGURAÇÃO DO NAVEGADOR ---
@@ -194,7 +192,7 @@ class AutomatorGUI:
             options.add_argument("--start-maximized")
             options.add_experimental_option("prefs", {"download.default_directory": DOWNLOAD_DIR})
             self.driver = webdriver.Chrome(service=service, options=options)
-            wait = WebDriverWait(self.driver, 30)
+            wait = WebDriverWait(self.driver, 30) # Wait longo para ações gerais
 
             # --- ETAPAS DE AUTOMAÇÃO COM INTERAÇÃO DO USUÁRIO ---
             self.driver.get("https://web.embraer.com.br/irj/portal")
@@ -215,10 +213,10 @@ class AutomatorGUI:
             # --- LOOP DE PROCESSAMENTO PRINCIPAL ---
             for index, row in df_filtrado.iterrows():
                 self.update_status(f"Processando OS: {row['OS_str']}...")
-                self.processar_uma_os(wait, row, arquivos_existentes, pastas_destino)
+                self.processar_uma_os(wait, row, pastas_destino)
             
             # --- REPROCESSAMENTO DE ERROS ---
-            self.reprocessar_erros(df_filtrado, wait, arquivos_existentes, pastas_destino)
+            self.reprocessar_erros(df_filtrado, wait, pastas_destino)
 
         except Exception as e:
             error_details = traceback.format_exc()
@@ -229,44 +227,29 @@ class AutomatorGUI:
                 self.registrar_log("Automação finalizada.")
                 self.driver.quit()
                 self.driver = None
-            if not self.reprocess_choice: # Se não entrou no fluxo de reprocessamento
+            if not self.reprocess_choice:
                 self.update_status("Processo finalizado!", "#008A00")
                 self.action_button.pack_forget()
 
-
-    def esperar_download_concluir(self, pasta_download, timeout=60):
-        """
-        Espera um novo arquivo PDF aparecer na pasta de downloads sem apagar nada.
-        """
-        # Pega o estado da pasta ANTES do download
+    def esperar_download_concluir(self, pasta_download, timeout=45):
         arquivos_antes = set(f for f in os.listdir(pasta_download) if f.endswith('.pdf'))
-        
         segundos = 0
         while segundos < timeout:
-            # Espera o arquivo temporário (.crdownload) desaparecer
             if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
-                # Pega o estado da pasta DEPOIS do download
                 arquivos_depois = set(f for f in os.listdir(pasta_download) if f.endswith('.pdf'))
-                
-                # Encontra qual é o novo arquivo
                 novos_arquivos = arquivos_depois - arquivos_antes
-                
                 if novos_arquivos:
-                    # Pega o nome do novo arquivo
                     nome_novo_arquivo = novos_arquivos.pop()
                     caminho_completo = os.path.join(pasta_download, nome_novo_arquivo)
                     self.registrar_log(f"Download detectado: {nome_novo_arquivo}")
-                    # Pequena pausa para garantir que o sistema liberou o arquivo
                     time.sleep(0.5) 
                     return caminho_completo
-            
             time.sleep(1)
             segundos += 1
-            
-        self.registrar_log(f"ERRO: Timeout ({timeout}s) esperando download. Nenhum novo arquivo .pdf foi detectado.")
+        self.registrar_log(f"ERRO: Timeout ({timeout}s) esperando download.")
         return None
 
-    def processar_uma_os(self, wait, row, arquivos_existentes, pastas_destino):
+    def processar_uma_os(self, wait, row, pastas_destino):
         os_num = row['OS_str']
         oc1, oc2 = row['OC_antes'], row['OC_depois']
         try:
@@ -279,7 +262,15 @@ class AutomatorGUI:
             campo_oc2.clear()
             campo_oc2.send_keys(oc2)
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+            
+            # --- NOVO: Verificação específica se a OS foi encontrada ---
+            try:
+                # Usa um wait curto para verificar o resultado da busca
+                WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+            except TimeoutException:
+                self.registrar_log(f"ERRO: OS {os_num} não encontrada ou a busca falhou. Pulando para a próxima.")
+                self.tirar_print_de_erro(os_num)
+                return # Pula para a próxima OS
             
             docs_a_processar = {
                 'LM': {"seletor": "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]", "existe": row['ja_existe_lm']},
@@ -292,9 +283,11 @@ class AutomatorGUI:
                     self.registrar_log(f"SKIP ({tipo}): Documento para OS {os_num} já existe.")
                     continue
                 try:
-                    # Delay mantido para estabilidade antes do clique
-                    time.sleep(2)
-                    wait.until(EC.element_to_be_clickable((By.XPATH, info['seletor']))).click()
+                    time.sleep(1) # Pausa otimizada
+                    button = wait.until(EC.element_to_be_clickable((By.XPATH, info['seletor'])))
+                    self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", button)
+                    time.sleep(0.5)
+                    self.driver.execute_script("arguments[0].click();", button)
                     caminho_arquivo = self.esperar_download_concluir(DOWNLOAD_DIR)
                     if caminho_arquivo:
                         novo_nome = f"{os_num}_{tipo}.pdf"
@@ -309,33 +302,31 @@ class AutomatorGUI:
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
         except Exception as e:
             self.registrar_log(f"ERRO GERAL com OS {os_num}: {e}")
-            
-            # --- ADICIONADO: Captura de tela em caso de erro ---
-            timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
-            nome_screenshot = f"erro_os_{os_num}_{timestamp_erro}.png"
-            screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
-            try:
-                if self.driver:
-                    self.driver.save_screenshot(screenshot_path)
-                    self.registrar_log(f"Screenshot de erro salvo em: '{screenshot_path}'")
-            except Exception as screenshot_error:
-                self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
-
+            self.tirar_print_de_erro(os_num)
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
 
-    def reprocessar_erros(self, df_original, wait, arquivos_existentes, pastas_destino):
+    def tirar_print_de_erro(self, os_num):
+        timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
+        nome_screenshot = f"erro_os_{os_num}_{timestamp_erro}.png"
+        screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
+        try:
+            if self.driver:
+                self.driver.save_screenshot(screenshot_path)
+                self.registrar_log(f"Screenshot de erro salvo em: '{screenshot_path}'")
+        except Exception as screenshot_error:
+            self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
+
+    def reprocessar_erros(self, df_original, wait, pastas_destino):
         self.registrar_log("--- Verificando erros para reprocessar ---")
         erros_os = set()
         with open(self.log_path, 'r', encoding='utf-8') as log_file:
             linhas_de_erro = [linha for linha in log_file if "ERRO" in linha or "AVISO" in linha]
-        
         if not linhas_de_erro:
             self.update_status("Nenhum erro encontrado. Processo finalizado com sucesso!", "#008A00")
             return
 
         with open(self.erro_log_path, 'w', encoding='utf-8') as erro_log_file:
             erro_log_file.writelines(linhas_de_erro)
-        
         for linha in linhas_de_erro:
             match = re.search(r'OS (\d+)', linha)
             if match: erros_os.add(match.group(1))
@@ -344,18 +335,21 @@ class AutomatorGUI:
         self.action_button.pack_forget()
         self.reprocess_frame.pack()
 
-        # Espera a escolha do usuário
         while not self.reprocess_choice:
             time.sleep(0.1)
-
         self.reprocess_frame.pack_forget()
 
         if self.reprocess_choice == "reprocess":
-            df_erros = df_original[df_original['OS_str'].isin(erros_os)]
+            # Recalcula quais documentos precisam ser baixados
+            df_erros = df_original[df_original['OS_str'].isin(erros_os)].copy()
+            df_erros['ja_existe_lm'] = df_erros['OS_str'].apply(lambda x: os.path.exists(os.path.join(pastas_destino['LM'], f"{x}_LM.pdf")))
+            df_erros['ja_existe_lp'] = df_erros['OS_str'].apply(lambda x: os.path.exists(os.path.join(pastas_destino['LP'], f"{x}_LP.pdf")))
+            df_erros['ja_existe_fs'] = df_erros['OS_str'].apply(lambda x: os.path.exists(os.path.join(pastas_destino['FS'], f"{x}_FS.pdf")))
+            
             self.registrar_log("--- Iniciando reprocessamento dos erros ---")
             for index, row in df_erros.iterrows():
                 self.update_status(f"Reprocessando OS: {row['OS_str']}...")
-                self.processar_uma_os(wait, row, arquivos_existentes, pastas_destino)
+                self.processar_uma_os(wait, row, pastas_destino)
             self.update_status("Reprocessamento finalizado!", "#008A00")
         else:
             self.registrar_log("Reprocessamento ignorado pelo usuário.")
