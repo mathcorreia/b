@@ -93,37 +93,34 @@ class ValidadorGUI:
         self.user_action_event.set()
 
     def setup_excel(self):
-        """Cria o arquivo Excel com o cabeçalho se ele não existir."""
-        if not os.path.exists(self.excel_path):
-            workbook = openpyxl.Workbook()
-            sheet = workbook.active
-            sheet.title = "Dados FSE"
-            headers = [
-                "OS", "OC / Item", "CODEM / DT. REV. ROT.", "PN / REV. PN / LID", 
-                "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
-                "REV. Engenharia", "Status Comparação"
-            ]
-            sheet.append(headers)
-            # Formatação opcional
-            for cell in sheet[1]:
-                cell.font = openpyxl.styles.Font(bold=True)
-            workbook.save(self.excel_path)
-            self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
+        if os.path.exists(self.excel_path):
+            os.remove(self.excel_path) # Garante um ficheiro limpo a cada execução
+            
+        workbook = openpyxl.Workbook()
+        sheet = workbook.active
+        sheet.title = "Dados FSE"
+        self.headers = [
+            "OS", "OC / Item", "CODEM / DT. REV. ROT.", "PN / REV. PN / LID", 
+            "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
+            "REV. Engenharia", "Status Comparação"
+        ]
+        sheet.append(self.headers)
+        for cell in sheet[1]:
+            cell.font = openpyxl.styles.Font(bold=True)
+        workbook.save(self.excel_path)
+        self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
 
     def run_automation(self):
         try:
-            # --- CONFIGURAÇÃO INICIAL ---
             self.update_status("Iniciando configuração...")
             self.setup_excel()
 
-            # --- LEITURA DO EXCEL DE ENTRADA ---
             self.update_status("Lendo arquivo Excel 'lista.xlsx'...")
             df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df.rename(columns={df.columns[0]: 'OS'}, inplace=True)
             df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             self.registrar_log(f"Arquivo Excel lido com {len(df)} itens para processar.")
 
-            # --- CONFIGURAÇÃO DO NAVEGADOR ---
             self.update_status("Configurando o navegador...")
             caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
             service = ChromeService(executable_path=caminho_chromedriver)
@@ -132,47 +129,62 @@ class ValidadorGUI:
             self.driver = webdriver.Chrome(service=service, options=options)
             wait = WebDriverWait(self.driver, 15)
 
-            # --- LOGIN E NAVEGAÇÃO INICIAL ---
             self.driver.get("https://web.embraer.com.br/irj/portal")
             self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
 
-            # --- ETAPA 1: EXTRAÇÃO DE DADOS DA FSE ---
-            self.update_status("Navegando para o GFS para extrair dados...")
+            # --- ETAPA 1: EXTRAÇÃO E SALVAMENTO INICIAL ---
+            self.update_status("ETAPA 1: Navegando para o GFS para extrair dados...")
             self.navegar_para_fse_busca(wait)
             
-            resultados = []
             for index, row in df.iterrows():
                 os_num = str(row['OS'])
-                self.update_status(f"Extraindo dados da OS: {os_num}...")
+                self.update_status(f"Extraindo dados da OS: {os_num} ({index + 1}/{len(df)})...")
                 dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
                 if dados_fse:
-                    resultados.append(dados_fse)
-            
-            # --- ETAPA 2: COMPARAÇÃO COM DADOS DA ENGENHARIA ---
-            self.update_status("Navegando para Desenhos de Engenharia para comparação...")
+                    # Adiciona placeholders para as colunas da etapa 2
+                    dados_fse["REV. Engenharia"] = ""
+                    dados_fse["Status Comparação"] = ""
+                    # Salva a linha imediatamente no Excel
+                    workbook = openpyxl.load_workbook(self.excel_path)
+                    sheet = workbook.active
+                    sheet.append(list(dados_fse.values()))
+                    workbook.save(self.excel_path)
+
+            self.registrar_log("Etapa 1 (Extração) concluída com sucesso.")
+
+            # --- ETAPA 2: ATUALIZAÇÃO COM COMPARAÇÃO ---
+            self.update_status("ETAPA 2: Navegando para Desenhos de Engenharia...")
             self.navegar_para_desenhos_engenharia(wait)
 
-            for dados in resultados:
-                os_num = dados["OS"]
-                pn_extraido = dados["PN extraído"]
-                self.update_status(f"Comparando revisão para OS: {os_num} (PN: {pn_extraido})...")
-                rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
-                dados["REV. Engenharia"] = rev_engenharia
+            workbook = openpyxl.load_workbook(self.excel_path)
+            sheet = workbook.active
+            
+            # Mapeia os nomes das colunas para os seus índices
+            col_indices = {name: i+1 for i, name in enumerate(self.headers)}
+
+            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
+                pn_extraido = row[col_indices["PN extraído"] - 1].value
+                rev_fse = row[col_indices["REV. FSE"] - 1].value
                 
-                # Comparação
-                if rev_engenharia and dados["REV. FSE"]:
-                    if rev_engenharia.strip().upper() == dados["REV. FSE"].strip().upper():
-                        dados["Status Comparação"] = "OK"
-                    else:
-                        dados["Status Comparação"] = "DIVERGENTE"
+                self.update_status(f"Comparando PN: {pn_extraido} ({i+1}/{sheet.max_row - 1})...")
+
+                if pn_extraido and pn_extraido != "Não encontrado":
+                    rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+                    
+                    status = "FALHA NA BUSCA"
+                    if rev_engenharia and rev_fse and rev_engenharia != "Não encontrada":
+                        if rev_engenharia.strip().upper() == rev_fse.strip().upper():
+                            status = "OK"
+                        else:
+                            status = "DIVERGENTE"
+                    
+                    # Atualiza as células na linha atual
+                    sheet.cell(row=i+2, column=col_indices["REV. Engenharia"], value=rev_engenharia)
+                    sheet.cell(row=i+2, column=col_indices["Status Comparação"], value=status)
                 else:
-                    dados["Status Comparação"] = "FALHA NA BUSCA"
-                
-                # Salva a linha completa no Excel
-                workbook = openpyxl.load_workbook(self.excel_path)
-                sheet = workbook.active
-                sheet.append(list(dados.values()))
-                workbook.save(self.excel_path)
+                    sheet.cell(row=i+2, column=col_indices["Status Comparação"], value="PN NÃO ENCONTRADO NA FSE")
+
+                workbook.save(self.excel_path) # Salva o progresso a cada linha
 
             self.update_status("Processo concluído com sucesso!", "#008A00")
 
@@ -210,10 +222,9 @@ class ValidadorGUI:
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
             dados = {"OS": os_num}
-            # Usando XPaths mais robustos baseados na sua análise
             dados["OC / Item"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', ' ')
-            dados["CODEM / DT. REV. ROT."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').replace('\n', ' ')
-            dados["PN / REV. PN / LID"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').replace('\n', ' ')
+            dados["CODEM / DT. REV. ROT."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').replace('\n', ' | ')
+            dados["PN / REV. PN / LID"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').replace('\n', ' | ')
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
@@ -238,19 +249,14 @@ class ValidadorGUI:
     def navegar_para_desenhos_engenharia(self, wait):
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.driver.get("https://web.embraer.com.br/irj/portal")
-        # --- CORRIGIDO: Usando o ID que você encontrou ---
         wait.until(EC.element_to_be_clickable((By.ID, "L2N1"))).click()
         self.prompt_user_action("Valide se a tela 'Desenhos Engenharia' está aberta e clique em 'Continuar'.")
     
     def buscar_revisao_engenharia(self, wait, part_number):
         try:
-            if not part_number or part_number == "Não encontrado":
-                return "PN não fornecido"
-
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
-            # O botão de consultar parece não ter um ID fixo, vamos usar o texto
             wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')]"))).click()
 
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
