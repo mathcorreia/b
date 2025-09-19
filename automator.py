@@ -6,90 +6,239 @@ import locale
 import re
 import traceback
 import tkinter as tk
-from tkinter import messagebox
+from tkinter import messagebox, scrolledtext
+import threading
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# --- JANELA DE STATUS VISUAL ---
-class StatusWindow:
-    def __init__(self):
-        self.root = tk.Tk()
-        self.root.title("Status da Automação")
-        self.root.geometry("450x170")
-        self.root.resizable(False, False)
-        self.root.eval('tk::PlaceWindow . center')
+# --- CONSTANTES GLOBAIS DE CONFIGURAÇÃO ---
+DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
+# ATENÇÃO: Esta é a pasta raiz onde a verificação de 2 anos será feita.
+PASTA_RAIZ_AUTOMATOR = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
+LOG_FILENAME = 'log_automacao.txt'
+ERRO_LOG_FILENAME = 'log_erros.txt'
+
+class AutomatorGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Automator Embraer Produtivo")
+        self.root.geometry("800x600")
+
+        self.label_status = tk.Label(root, text="Pronto para iniciar.", font=("Helvetica", 12), pady=10)
+        self.label_status.pack()
+
+        self.log_text = scrolledtext.ScrolledText(root, state='disabled', wrap=tk.WORD, font=("Courier New", 9))
+        self.log_text.pack(expand=True, fill='both', padx=10, pady=5)
+
+        self.start_button = tk.Button(root, text="Iniciar Automação", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=20, pady=10)
+        self.start_button.pack(pady=10)
         
-        self.label = tk.Label(self.root, text="", font=("Arial", 16, "bold"), wraplength=420)
-        self.label.pack(expand=True, fill="both", padx=15, pady=15)
-        self.ok_button = tk.Button(self.root, text="OK", command=self.root.destroy, state="disabled", width=15, font=("Arial", 10, "bold"))
-        self.ok_button.pack(pady=(0, 15))
+        # Caminhos dos logs serão definidos no início da automação
+        self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
+        self.erro_log_path = os.path.join(os.getcwd(), ERRO_LOG_FILENAME)
 
-    def show_wait(self, message):
-        self.label.config(text=message, fg="#E69500") # Amarelo/Laranja
-        self.ok_button.config(state="disabled")
-        self.root.deiconify()
-        self.root.update()
+    def registrar_log(self, mensagem):
+        """Registra a mensagem no arquivo de log e na interface gráfica de forma thread-safe."""
+        log_entry = f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n"
+        
+        # Escreve no arquivo
+        with open(self.log_path, 'a', encoding='utf-8') as log_file:
+            log_file.write(log_entry)
 
-    def show_ready(self, message):
-        self.label.config(text=message, fg="#008A00") # Verde
-        self.ok_button.config(state="normal")
-        self.root.deiconify()
-        self.root.mainloop()
+        # Atualiza a GUI
+        def update_gui():
+            self.log_text.config(state='normal')
+            self.log_text.insert(tk.END, log_entry)
+            self.log_text.see(tk.END) # Auto-scroll
+            self.log_text.config(state='disabled')
+        
+        self.root.after(0, update_gui)
 
-    def hide(self):
-        self.root.withdraw()
+    def update_status(self, text):
+        """Atualiza o label de status na GUI de forma thread-safe."""
+        def do_update():
+            self.label_status.config(text=text)
+        self.root.after(0, do_update)
 
-# Oculta a janela raiz principal do Tkinter
-root = tk.Tk()
-root.withdraw()
+    def iniciar_automacao_thread(self):
+        """Inicia a lógica de automação em uma nova thread para não congelar a GUI."""
+        self.start_button.config(state='disabled', text="Executando...")
+        self.log_text.config(state='normal')
+        self.log_text.delete(1.0, tk.END) # Limpa o log da execução anterior
+        self.log_text.config(state='disabled')
+        
+        automation_thread = threading.Thread(target=self.run_automation)
+        automation_thread.daemon = True
+        automation_thread.start()
 
-# --- BLOCO PRINCIPAL ---
-try:
-    # Config geral
-    try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-    except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+    def verificar_documento_existente(self, os_num, tipo_doc):
+        """
+        Verifica se um documento para uma OS já existe na PASTA_RAIZ_AUTOMATOR,
+        com uma retroatividade de 2 anos.
+        
+        Args:
+            os_num (str): O número da Ordem de Serviço.
+            tipo_doc (str): O tipo de documento ('LM', 'LP' ou 'FS').
 
-    hoje = datetime.now()
-    nome_mes_atual = hoje.strftime("%B").capitalize()
-    num_mes_atual = hoje.month + 100
+        Returns:
+            bool: True se o arquivo for encontrado, False caso contrário.
+        """
+        nome_arquivo = f"{os_num}_{tipo_doc}.pdf"
+        ano_atual = datetime.now().year
+        anos_a_verificar = [str(ano) for ano in range(ano_atual, ano_atual - 3, -1)]
 
-    DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
-    PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
-    PASTA_BASE_ANO_ATUAL = os.path.join(PASTA_RAIZ_VERIFICACAO, str(hoje.year))
-    MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
-    PASTA_MES = os.path.join(PASTA_BASE_ANO_ATUAL, MES_ATUAL)
-    LOG_PATH = os.path.join(os.getcwd(), 'log_automacao.txt')
-    ERRO_LOG_PATH = os.path.join(os.getcwd(), 'log_erros.txt')
+        self.registrar_log(f"VERIFICANDO: Buscando por '{nome_arquivo}' nos anos {anos_a_verificar}...")
 
-    PASTA_DESTINO_LM = os.path.join(PASTA_MES, 'LM')
-    PASTA_DESTINO_LP = os.path.join(PASTA_MES, 'LP')
-    PASTA_DESTINO_FS = os.path.join(PASTA_MES, 'FS')
+        for ano in anos_a_verificar:
+            caminho_ano = os.path.join(PASTA_RAIZ_AUTOMATOR, ano)
+            if not os.path.isdir(caminho_ano):
+                continue
 
-    os.makedirs(PASTA_DESTINO_LM, exist_ok=True)
-    os.makedirs(PASTA_DESTINO_LP, exist_ok=True)
-    os.makedirs(PASTA_DESTINO_FS, exist_ok=True)
+            for dirpath, _, filenames in os.walk(caminho_ano):
+                if nome_arquivo in filenames:
+                    caminho_encontrado = os.path.join(dirpath, nome_arquivo)
+                    self.registrar_log(f"EXISTENTE (SKIP): Documento '{nome_arquivo}' já encontrado em: {caminho_encontrado}")
+                    return True
+        
+        self.registrar_log(f"NÃO ENCONTRADO: '{nome_arquivo}' não existe. Prosseguindo com o download.")
+        return False
+
+    def run_automation(self):
+        """Contém toda a lógica principal da automação."""
+        driver = None
+        try:
+            # --- CONFIGURAÇÃO INICIAL ---
+            self.update_status("Iniciando configuração...")
+            try:
+                locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+            except locale.Error:
+                locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+
+            hoje = datetime.now()
+            nome_mes_atual = hoje.strftime("%B").capitalize()
+            # O cálculo do mês estava somando 100, ajustei para um formato mais comum (ex: 09)
+            num_mes_atual = f"{hoje.month:02d}"
+
+            PASTA_ANO_ATUAL = os.path.join(PASTA_RAIZ_AUTOMATOR, str(hoje.year))
+            MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
+            PASTA_MES = os.path.join(PASTA_ANO_ATUAL, MES_ATUAL)
+
+            PASTA_DESTINO_LM = os.path.join(PASTA_MES, 'LM')
+            PASTA_DESTINO_LP = os.path.join(PASTA_MES, 'LP')
+            PASTA_DESTINO_FS = os.path.join(PASTA_MES, 'FS')
+
+            os.makedirs(PASTA_DESTINO_LM, exist_ok=True)
+            os.makedirs(PASTA_DESTINO_LP, exist_ok=True)
+            os.makedirs(PASTA_DESTINO_FS, exist_ok=True)
+            
+            self.registrar_log(f"Pasta de destino do mês atual: {PASTA_MES}")
+
+            # --- LEITURA DO EXCEL ---
+            self.update_status("Lendo arquivo Excel...")
+            self.registrar_log("Lendo arquivo Excel 'lista.xlsx'...")
+            try:
+                df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
+                df.rename(columns={df.columns[0]: 'OS'}, inplace=True)
+                df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
+                self.registrar_log(f"Arquivo Excel lido com sucesso. {len(df)} itens para processar.")
+            except FileNotFoundError:
+                self.registrar_log("ERRO CRÍTICO: Arquivo 'lista.xlsx' não encontrado.")
+                messagebox.showerror("Erro", "O arquivo 'lista.xlsx' não foi encontrado na pasta do programa.")
+                return # Encerra a execução da automação
+
+            # --- CONFIGURAÇÃO DO NAVEGADOR ---
+            self.update_status("Configurando o navegador...")
+            self.registrar_log("Configurando o Chrome...")
+            caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+            if not os.path.exists(caminho_chromedriver):
+                self.registrar_log("ERRO CRÍTICO: 'chromedriver.exe' não encontrado.")
+                messagebox.showerror("Erro", "'chromedriver.exe' não foi encontrado na pasta do programa.")
+                return
+
+            service = ChromeService(executable_path=caminho_chromedriver)
+            options = webdriver.ChromeOptions()
+            options.add_argument("--start-maximized")
+            options.add_experimental_option("prefs", {
+                "download.default_directory": DOWNLOAD_DIR,
+                "download.prompt_for_download": False,
+                "download.directory_upgrade": True,
+                "safebrowsing.enabled": True
+            })
+
+            self.registrar_log("Iniciando o WebDriver do Chrome...")
+            driver = webdriver.Chrome(service=service, options=options)
+            wait = WebDriverWait(driver, 30)
+            self.registrar_log("WebDriver iniciado com sucesso.")
+
+            # --- LOGIN E NAVEGAÇÃO ---
+            driver.get("https://web.embraer.com.br/irj/portal")
+            messagebox.showinfo("Ação Necessária", "Faça o login e, quando estiver na página principal do portal, clique em OK para continuar.")
+
+            self.update_status("Navegando para a aplicação GFS...")
+            self.registrar_log("Iniciando navegação para GFS...")
+            original_window = driver.current_window_handle
+            wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
+            self.registrar_log("Clicou no link 'GFS'.")
+
+            wait.until(EC.number_of_windows_to_be(2))
+            for window_handle in driver.window_handles:
+                if window_handle != original_window:
+                    driver.switch_to.window(window_handle)
+                    break
+            self.registrar_log("Foco alterado para a nova aba da aplicação GFS.")
+
+            messagebox.showinfo("Ação Necessária", "Robô na aba correta.\n\nAGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, clique em OK para o robô começar a trabalhar.")
+
+            # --- LOOP DE PROCESSAMENTO PRINCIPAL ---
+            self.registrar_log("Iniciando processamento principal do Excel...")
+            for index, row in df.iterrows():
+                os_num = str(row['OS'])
+                oc1 = row['OC_antes']
+                oc2 = row['OC_depois']
+                self.update_status(f"Processando OS: {os_num}")
+                self.processar_uma_os(driver, wait, os_num, oc1, oc2, {
+                    'LM': PASTA_DESTINO_LM, 'LP': PASTA_DESTINO_LP, 'FS': PASTA_DESTINO_FS
+                })
+            
+            self.update_status("Verificando erros para reprocessamento...")
+            self.reprocessar_erros(df, driver, wait, {
+                'LM': PASTA_DESTINO_LM, 'LP': PASTA_DESTINO_LP, 'FS': PASTA_DESTINO_FS
+            })
+
+            self.update_status("Automação concluída com sucesso!")
+            messagebox.showinfo("Fim", "Processo de automação concluído. Verifique o log para detalhes.")
+
+        except Exception as e:
+            error_details = traceback.format_exc()
+            self.registrar_log(f"ERRO CRÍTICO: {error_details}")
+            messagebox.showerror("Erro Crítico", f"Ocorreu um erro grave e a automação será encerrada.\n\nVerifique o log.\n\nErro: {e}")
+            self.update_status("Erro crítico. Automação encerrada.")
+
+        finally:
+            if driver:
+                self.registrar_log("Automação finalizada. Fechando o navegador.")
+                driver.quit()
+            
+            # Reabilita o botão ao final da execução
+            self.start_button.config(state='normal', text="Iniciar Automação")
+            self.update_status("Pronto.")
     
-    # Registra log
-    def registrar_log(mensagem):
-        with open(LOG_PATH, 'a', encoding='utf-8') as log:
-            log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
-
-    def esperar_download_concluir(pasta_download, timeout=60):
-        segundos = 0
+    def esperar_download_concluir(self, pasta_download, timeout=60):
+        """Espera um arquivo PDF ser completamente baixado na pasta."""
+        # Limpa PDFs antigos para evitar pegar o arquivo errado
         for item in os.listdir(pasta_download):
             if item.endswith(".pdf"):
                 try:
                     os.remove(os.path.join(pasta_download, item))
                 except OSError as e:
-                    registrar_log(f"Aviso: Não foi possível limpar o arquivo antigo {item}. Erro: {e}")
+                    self.registrar_log(f"Aviso: Não foi possível limpar o arquivo antigo {item}. Erro: {e}")
+
+        segundos = 0
         while segundos < timeout:
             if not any(f.endswith('.crdownload') for f in os.listdir(pasta_download)):
                 arquivos_pdf = [os.path.join(pasta_download, f) for f in os.listdir(pasta_download) if f.endswith('.pdf')]
@@ -99,10 +248,20 @@ try:
             segundos += 1
         return None
 
-    def processar_uma_os(driver, wait, os_num, oc1, oc2):
+    def processar_uma_os(self, driver, wait, os_num, oc1, oc2, pastas_destino):
+        """Processa uma única linha do Excel (uma OS)."""
         try:
-            registrar_log(f"--- Processando OS: {os_num} | OC: {oc1}/{oc2} ---")
+            self.registrar_log(f"--- Processando OS: {os_num} | OC: {oc1}/{oc2} ---")
             
+            docs_a_baixar = []
+            if not self.verificar_documento_existente(os_num, 'LM'): docs_a_baixar.append('LM')
+            if not self.verificar_documento_existente(os_num, 'LP'): docs_a_baixar.append('LP')
+            if not self.verificar_documento_existente(os_num, 'FS'): docs_a_baixar.append('FS')
+            
+            if not docs_a_baixar:
+                self.registrar_log(f"Todos os documentos para a OS {os_num} já existem. Pulando para a próxima.")
+                return True
+
             campo_oc1 = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']")))
             campo_oc1.clear()
             campo_oc1.send_keys(oc1)
@@ -114,159 +273,51 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Downloads com tratamento de erro opcional
-            try:
-                time.sleep(1)
-                seletor_lm = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]")
-                wait.until(EC.element_to_be_clickable(seletor_lm)).click()
-                caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_lm:
-                    novo_nome_lm = f"{os_num}_LM.pdf"
-                    destino_lm = os.path.join(PASTA_DESTINO_LM, novo_nome_lm)
-                    shutil.move(caminho_lm, destino_lm)
-                    registrar_log(f"SUCESSO (LM): Arquivo salvo como {novo_nome_lm}")
-                else:
-                    registrar_log(f"ERRO (LM): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (LM): Botão 'Lista de Materiais' não encontrado para a OS {os_num}.")
-            
-            try:
-                time.sleep(2)
-                seletor_lp = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[2]")
-                wait.until(EC.element_to_be_clickable(seletor_lp)).click()
-                caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_lp:
-                    novo_nome_lp = f"{os_num}_LP.pdf"
-                    destino_lp = os.path.join(PASTA_DESTINO_LP, novo_nome_lp)
-                    shutil.move(caminho_lp, destino_lp)
-                    registrar_log(f"SUCESSO (LP): Arquivo salvo como {novo_nome_lp}")
-                else:
-                    registrar_log(f"ERRO (LP): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (LP): Botão 'Lista de Peças' não encontrado para a OS {os_num}.")
+            # Dicionário de seletores para simplificar
+            seletores = {
+                'LM': "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]",
+                'LP': "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[2]",
+                'FS': "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[2]"
+            }
 
-            try:
-                time.sleep(2)
-                seletor_fs = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[2]")
-                wait.until(EC.element_to_be_clickable(seletor_fs)).click()
-                caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_fs:
-                    novo_nome_fs = f"{os_num}_FS.pdf"
-                    destino_fs = os.path.join(PASTA_DESTINO_FS, novo_nome_fs)
-                    shutil.move(caminho_fs, destino_fs)
-                    registrar_log(f"SUCESSO (FS): Arquivo salvo como {novo_nome_fs}")
-                else:
-                    registrar_log(f"ERRO (FS): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (FS): Botão 'Ficha de Serviço' não encontrado para a OS {os_num}.")
+            for tipo_doc in ['LM', 'LP', 'FS']:
+                if tipo_doc in docs_a_baixar:
+                    try:
+                        time.sleep(2) # Pequena pausa entre downloads
+                        seletor = (By.XPATH, seletores[tipo_doc])
+                        wait.until(EC.element_to_be_clickable(seletor)).click()
+                        
+                        caminho_arquivo = self.esperar_download_concluir(DOWNLOAD_DIR)
+                        if caminho_arquivo:
+                            novo_nome = f"{os_num}_{tipo_doc}.pdf"
+                            destino = os.path.join(pastas_destino[tipo_doc], novo_nome)
+                            shutil.move(caminho_arquivo, destino)
+                            self.registrar_log(f"SUCESSO ({tipo_doc}): Arquivo salvo como {novo_nome}")
+                        else:
+                            self.registrar_log(f"ERRO ({tipo_doc}): Download não concluído para a OS {os_num}")
+                    except TimeoutException:
+                        self.registrar_log(f"AVISO ({tipo_doc}): Botão para '{tipo_doc}' não encontrado para a OS {os_num}.")
             
-            registrar_log(f"Processo da OS {os_num} concluído. Voltando para a página de busca.")
+            self.registrar_log(f"Processo da OS {os_num} concluído. Voltando para a página de busca.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return True
 
         except Exception as e:
             timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
             nome_screenshot = f"erro_os_{os_num}_{timestamp_erro}.png"
-            registrar_log(f"ERRO GERAL com OS {os_num}: {e}")
-            try:
-                driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
-                registrar_log(f"Screenshot salvo como {nome_screenshot}")
-            except Exception as screenshot_error:
-                registrar_log(f"FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
-            
+            screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
+            driver.save_screenshot(screenshot_path)
+            self.registrar_log(f"ERRO GERAL com OS {os_num}: {e} - Screenshot salvo em '{screenshot_path}'.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return False
 
-    # Le os dados do excel
-    df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
-    df.rename(columns={df.columns[0]: 'OS'}, inplace=True) 
-    df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-    registrar_log(f"Arquivo Excel lido. Total de {len(df)} itens na lista.")
-
-    # --- ADIÇÃO: VERIFICAÇÃO DE DUPLICIDADE RETROATIVA ---
-    registrar_log("Iniciando verificação retroativa de duplicidade (até 2 anos). Isso pode levar alguns minutos...")
-    arquivos_existentes = set()
-    data_limite = hoje - pd.DateOffset(years=2)
-    if os.path.exists(PASTA_RAIZ_VERIFICACAO):
-        for root_dir, dirs, files in os.walk(PASTA_RAIZ_VERIFICACAO):
-            nome_da_pasta_atual = os.path.basename(root_dir)
-            try:
-                if len(nome_da_pasta_atual) == 4 and nome_da_pasta_atual.isdigit():
-                    if int(nome_da_pasta_atual) < data_limite.year:
-                        dirs[:] = []
-                        continue
-            except ValueError:
-                pass
-            for nome_arquivo in files:
-                if nome_arquivo.endswith(".pdf"):
-                    os_num = nome_arquivo.split('_')[0]
-                    if os_num.isdigit():
-                        arquivos_existentes.add(os_num)
-    
-    if arquivos_existentes:
-        df['OS'] = df['OS'].astype(str)
-        df_original_len = len(df)
-        df = df[~df['OS'].isin(arquivos_existentes)]
-        removidos = df_original_len - len(df)
-        registrar_log(f"Verificação concluída. {removidos} OSs foram removidas da lista por já terem sido baixadas.")
-    else:
-        registrar_log("Verificação concluída. Nenhuma duplicidade encontrada.")
-    registrar_log(f"Total de {len(df)} itens restantes para processar.")
-    # --- FIM DA ADIÇÃO ---
-    
-    if df.empty:
-        messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
-    else:
-        # Configurações do Navegador
-        caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-        service = ChromeService(executable_path=caminho_chromedriver)
-        options = webdriver.ChromeOptions() 
-        options.add_argument("--start-maximized")
-        options.add_experimental_option("prefs", {
-            "download.default_directory": DOWNLOAD_DIR,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True
-        })
-        driver = webdriver.Chrome(service=service, options=options)
-
-        # Inicia a janela de status e a esconde
-        janela_status = StatusWindow()
-        janela_status.hide()
-
-        # Login e Navegação
-        driver.get("https://web.embraer.com.br/irj/portal")
-        janela_status.show_ready("Faça o login no portal e, quando a página principal carregar, clique em OK.")
-
-        wait = WebDriverWait(driver, 30)
-        
-        janela_status.show_wait("POR FAVOR, AGUARDE...\nNavegando para o sistema GFS e trocando de aba.")
-        
-        original_window = driver.current_window_handle
-        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
-        wait.until(EC.number_of_windows_to_be(2))
-        for window_handle in driver.window_handles:
-            if window_handle != original_window:
-                driver.switch_to.window(window_handle)
-                break
-        registrar_log("Foco alterado para a nova aba da aplicação GFS.")
-        
-        janela_status.show_ready("AGORA PODE CLICAR EM OK\n\nNo navegador, clique em 'FSE' > 'Busca FSe' e, quando a tela carregar, clique em OK aqui.")
-
-        # Loop de processamento principal
-        registrar_log("Iniciando processamento principal do Excel...")
-        for index, row in df.iterrows():
-            os_num = str(row['OS'])
-            oc1 = row['OC_antes']
-            oc2 = row['OC_depois']
-            processar_uma_os(driver, wait, os_num, oc1, oc2)
-
-        # Bloco de Reprocessamento de Erros
-        registrar_log("--- Fim do processamento principal. Verificando erros para reprocessar. ---")
+    def reprocessar_erros(self, df_original, driver, wait, pastas_destino):
+        """Analisa o log, encontra OS com erros e pergunta ao usuário se deseja reprocessá-las."""
+        self.registrar_log("--- Fim do processamento principal. Verificando erros para reprocessar. ---")
         erros_os = set()
         linhas_de_erro = []
         try:
-            with open(LOG_PATH, 'r', encoding='utf-8') as log_file:
+            with open(self.log_path, 'r', encoding='utf-8') as log_file:
                 for linha in log_file:
                     if "ERRO" in linha or "AVISO" in linha:
                         linhas_de_erro.append(linha)
@@ -274,40 +325,43 @@ try:
                         if match:
                             erros_os.add(match.group(1))
         except FileNotFoundError:
-            registrar_log("Arquivo de log não encontrado. Nenhum item para reprocessar.")
+            self.registrar_log("Arquivo de log não encontrado. Nenhum item para reprocessar.")
+            return
 
         if linhas_de_erro:
-            with open(ERRO_LOG_PATH, 'w', encoding='utf-8') as erro_log_file:
+            with open(self.erro_log_path, 'w', encoding='utf-8') as erro_log_file:
                 erro_log_file.write(f"--- Resumo de Erros e Avisos da execução de {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ---\n\n")
                 erro_log_file.writelines(linhas_de_erro)
-            registrar_log(f"Log de erros filtrado foi salvo em: {ERRO_LOG_PATH}")
+            self.registrar_log(f"Log de erros filtrado foi salvo em: {self.erro_log_path}")
 
         if not erros_os:
-            messagebox.showinfo("Automação Concluída", "Nenhum erro encontrado na primeira passagem. Processo finalizado com sucesso!")
+            # Não exibe o messagebox se a janela principal já foi fechada
+            if self.root.winfo_exists():
+                messagebox.showinfo("Automação Concluída", "Nenhum erro encontrado na primeira passagem. Processo finalizado com sucesso!")
         else:
-            registrar_log(f"Encontrados {len(erros_os)} itens com erro para reprocessar: {', '.join(sorted(erros_os))}")
-            resposta = messagebox.askyesno("Reprocessamento de Erros", f"Foram encontrados {len(erros_os)} itens com erros ou avisos.\n\nO log de erros foi salvo em 'log_erros.txt'.\n\nDeseja tentar baixá-los novamente?")
+            self.registrar_log(f"Encontrados {len(erros_os)} itens com erro para reprocessar: {', '.join(sorted(erros_os))}")
             
-            if resposta:
-                df_erros = df[df['OS'].astype(str).isin(erros_os)]
-                registrar_log("--- Iniciando reprocessamento dos erros. ---")
-                for index, row in df_erros.iterrows():
-                    os_num = str(row['OS'])
-                    oc1 = row['OC_antes']
-                    oc2 = row['OC_depois']
-                    processar_uma_os(driver, wait, os_num, oc1, oc2)
-                registrar_log("--- Fim do reprocessamento. ---")
-                messagebox.showinfo("Automação Concluída", "Reprocessamento finalizado. Verifique os logs para mais detalhes.")
-            else:
-                registrar_log("Reprocessamento ignorado pelo usuário.")
-                messagebox.showinfo("Automação Concluída", "Processo finalizado. Alguns itens apresentaram erros e não foram reprocessados.")
+            if self.root.winfo_exists():
+                resposta = messagebox.askyesno("Reprocessamento de Erros", f"Foram encontrados {len(erros_os)} itens com erros ou avisos.\n\nO log de erros foi salvo em '{ERRO_LOG_FILENAME}'.\n\nDeseja tentar baixá-los novamente?")
+                
+                if resposta:
+                    df_erros = df_original[df_original['OS'].astype(str).isin(erros_os)]
+                    self.registrar_log("--- Iniciando reprocessamento dos erros. ---")
+                    for index, row in df_erros.iterrows():
+                        os_num = str(row['OS'])
+                        oc1 = row['OC_antes']
+                        oc2 = row['OC_depois']
+                        self.update_status(f"Reprocessando OS: {os_num}")
+                        self.processar_uma_os(driver, wait, os_num, oc1, oc2, pastas_destino)
+                    self.registrar_log("--- Fim do reprocessamento. ---")
+                    if self.root.winfo_exists():
+                        messagebox.showinfo("Automação Concluída", "Reprocessamento finalizado. Verifique os logs para mais detalhes.")
+                else:
+                    self.registrar_log("Reprocessamento ignorado pelo usuário.")
+                    if self.root.winfo_exists():
+                        messagebox.showinfo("Automação Concluída", "Processo finalizado. Alguns itens apresentaram erros e não foram reprocessados.")
 
-except Exception as e:
-     error_details = traceback.format_exc()
-     registrar_log(f"ERRO CRÍTICO: {error_details}")
-     messagebox.showerror("Erro Crítico", f"Ocorreu um erro grave e a automação será encerrada.\n\nVerifique o 'log_automacao.txt'.\n\nErro: {error_details}")
-
-finally:
-    if 'driver' in locals() and 'driver' in vars() and driver:
-        registrar_log("Automação finalizada.")
-        driver.quit()
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = AutomatorGUI(root)
+    root.mainloop()
