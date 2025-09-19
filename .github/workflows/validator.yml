@@ -1,0 +1,50 @@
+name: Build Validador EXE with PyInstaller
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Cache Pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Validador EXE
+        run: |
+          pyinstaller --noconsole ^
+            --name ValidadorRevisao ^
+            --add-data "chromedriver.exe;." ^
+            --add-data "lista.xlsx;." ^
+            --onefile ^
+            --hidden-import=pandas._libs.tslibs.np_datetime ^
+            --hidden-import=pandas._libs.tslibs.nattype ^
+            validador_revisao.py
+
+      - name: Upload Validador EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: ValidadorRevisao
+          path: dist/ValidadorRevisao.exe
