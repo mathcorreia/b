@@ -32,12 +32,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      - name: List files in the repository root
+        run: dir
+
       - name: Build Validador EXE
         run: |
           pyinstaller --noconsole `
             --name ValidadorRevisao `
-            --add-data "chromedriver.exe;." `
-            --add-data "lista.xlsx;." `
             --onefile `
             --hidden-import=pandas._libs.tslibs.np_datetime `
             --hidden-import=pandas._libs.tslibs.nattype `
