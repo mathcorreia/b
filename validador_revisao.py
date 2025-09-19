@@ -207,59 +207,56 @@ class ValidadorGUI:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Espera um elemento chave da página de detalhes carregar
-            wait.until(EC.visibility_of_element_located((By.XPATH, "//div[contains(text(), 'DATA EXPLOSÃO')]")))
+            wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
-            # Extração dos dados
             dados = {"OS": os_num}
-            dados["OC / Item"] = self.safe_find_text(By.XPATH, "//span[contains(text(), 'OC')]/following-sibling::span")
-            dados["CODEM / DT. REV. ROT."] = self.safe_find_text(By.XPATH, "//div[contains(text(), 'CODEM / DT. REV. ROT.')]/following-sibling::div")
-            dados["PN / REV. PN / LID"] = self.safe_find_text(By.XPATH, "//div[contains(text(), 'PN / REV. PN / LID')]/following-sibling::div")
-            dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//div[contains(text(), 'IND. RASTR.')]/following-sibling::div")
+            # Usando XPaths mais robustos baseados na sua análise
+            dados["OC / Item"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', ' ')
+            dados["CODEM / DT. REV. ROT."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').replace('\n', ' ')
+            dados["PN / REV. PN / LID"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').replace('\n', ' ')
+            dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//div[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
-            dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements])
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
+            dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
 
-            # Lógica para extrair PN e Revisão do campo "PN / REV. PN / LID"
             pn_rev_raw = dados["PN / REV. PN / LID"]
-            pn_match = re.search(r'(\d{4}-\d{4}-\d{3}|\d{4}-\d{4})', pn_rev_raw)
-            rev_match = re.search(r'\n([A-Z])\n', pn_rev_raw) # Busca por uma letra maiúscula entre quebras de linha
+            pn_match = re.search(r'(\d+-\d+-\d+)', pn_rev_raw)
+            rev_match = re.search(r'\s+([A-Z])\s+', pn_rev_raw)
             
             dados["PN extraído"] = pn_match.group(1) if pn_match else "Não encontrado"
             dados["REV. FSE"] = rev_match.group(1) if rev_match else "Não encontrada"
 
-            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1") # Volta para busca
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return dados
 
         except Exception as e:
             self.registrar_log(f"ERRO ao extrair dados da OS {os_num}: {e}")
             self.tirar_print_de_erro(os_num, "extracao_FSE")
-            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1") # Tenta voltar
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return None
     
     def navegar_para_desenhos_engenharia(self, wait):
-        # Assumindo que a navegação parte do portal principal
-        self.driver.switch_to.window(self.driver.window_handles[0]) # Volta para a aba principal do portal
-        self.driver.get("https://web.embraer.com.br/irj/portal") # Recarrega o portal
-        # O caminho de cliques conforme a imagem 2
-        wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Minhas Aplicações')]"))).click()
-        wait.until(EC.element_to_be_clickable((By.XPATH, "//a[contains(., 'Desenhos Engenharia')]"))).click()
+        self.driver.switch_to.window(self.driver.window_handles[0])
+        self.driver.get("https://web.embraer.com.br/irj/portal")
+        # --- CORRIGIDO: Usando o ID que você encontrou ---
+        wait.until(EC.element_to_be_clickable((By.ID, "L2N1"))).click()
         self.prompt_user_action("Valide se a tela 'Desenhos Engenharia' está aberta e clique em 'Continuar'.")
     
     def buscar_revisao_engenharia(self, wait, part_number):
         try:
-            # Conforme imagem 2 e 3
+            if not part_number or part_number == "Não encontrado":
+                return "PN não fornecido"
+
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')]"))).click()
+            # O botão de consultar parece não ter um ID fixo, vamos usar o texto
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')]"))).click()
 
-            # Espera o resultado da árvore de arquivos carregar
-            # O seletor busca pela revisão, ex: 'Rev N'
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
-            revisao_raw = rev_element.text # Ex: "Rev N"
+            revisao_raw = rev_element.text
             revisao = revisao_raw.split(" ")[-1]
             self.registrar_log(f"Revisão encontrada para PN {part_number}: {revisao}")
             return revisao
@@ -289,3 +286,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ValidadorGUI(root)
     root.mainloop()
+
