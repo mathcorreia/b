@@ -372,4 +372,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ValidadorGUI(root)
     root.mainloop()
-
