@@ -11,6 +11,7 @@ from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
@@ -44,23 +45,17 @@ class StatusWindow:
     def hide(self):
         self.root.withdraw()
 
-# Oculta a janela raiz principal do Tkinter que não será usada
+# Oculta a janela raiz principal do Tkinter
 root = tk.Tk()
 root.withdraw()
 
-# Função de log
-def registrar_log(mensagem):
-    # O LOG_PATH será definido dentro do bloco try principal
-    with open(LOG_PATH, 'a', encoding='utf-8') as log:
-        log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
-
-# --- BLOCO PRINCIPAL COM CAPTURA DE ERRO ---
+# --- BLOCO PRINCIPAL ---
 try:
     # Config geral
     try:
-        locale.setlocale(locale.LC_time, 'pt_BR.UTF-8')
+        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
     except locale.Error:
-        locale.setlocale(locale.LC_time, 'Portuguese_Brazil')
+        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
 
     hoje = datetime.now()
     nome_mes_atual = hoje.strftime("%B").capitalize()
@@ -82,6 +77,11 @@ try:
     os.makedirs(PASTA_DESTINO_LP, exist_ok=True)
     os.makedirs(PASTA_DESTINO_FS, exist_ok=True)
     
+    # Registra log
+    def registrar_log(mensagem):
+        with open(LOG_PATH, 'a', encoding='utf-8') as log:
+            log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
+
     def esperar_download_concluir(pasta_download, timeout=60):
         segundos = 0
         for item in os.listdir(pasta_download):
@@ -114,43 +114,53 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            time.sleep(1)
-            seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
-            wait.until(EC.element_to_be_clickable(seletor_lm)).click()
-            caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
-            if caminho_lm:
-                novo_nome_lm = f"{os_num}_LM.pdf"
-                destino_lm = os.path.join(PASTA_DESTINO_LM, novo_nome_lm)
-                shutil.move(caminho_lm, destino_lm)
-                registrar_log(f"SUCESSO (LM): Arquivo salvo como {novo_nome_lm}")
-            else:
-                raise Exception(f"Download (LM) não concluído para a OS {os_num}")
+            # Downloads com tratamento de erro opcional
+            try:
+                time.sleep(1)
+                seletor_lm = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]")
+                wait.until(EC.element_to_be_clickable(seletor_lm)).click()
+                caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
+                if caminho_lm:
+                    novo_nome_lm = f"{os_num}_LM.pdf"
+                    destino_lm = os.path.join(PASTA_DESTINO_LM, novo_nome_lm)
+                    shutil.move(caminho_lm, destino_lm)
+                    registrar_log(f"SUCESSO (LM): Arquivo salvo como {novo_nome_lm}")
+                else:
+                    registrar_log(f"ERRO (LM): Download não concluído para a OS {os_num}")
+            except TimeoutException:
+                registrar_log(f"AVISO (LM): Botão 'Lista de Materiais' não encontrado para a OS {os_num}.")
             
-            time.sleep(2)
-            seletor_lp = (By.XPATH, "//button[contains(., 'Lista de Peças')]")
-            wait.until(EC.element_to_be_clickable(seletor_lp)).click()
-            caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
-            if caminho_lp:
-                novo_nome_lp = f"{os_num}_LP.pdf"
-                destino_lp = os.path.join(PASTA_DESTINO_LP, novo_nome_lp)
-                shutil.move(caminho_lp, destino_lp)
-                registrar_log(f"SUCESSO (LP): Arquivo salvo como {novo_nome_lp}")
-            else:
-                raise Exception(f"Download (LP) não concluído para a OS {os_num}")
+            try:
+                time.sleep(2)
+                seletor_lp = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[2]")
+                wait.until(EC.element_to_be_clickable(seletor_lp)).click()
+                caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
+                if caminho_lp:
+                    novo_nome_lp = f"{os_num}_LP.pdf"
+                    destino_lp = os.path.join(PASTA_DESTINO_LP, novo_nome_lp)
+                    shutil.move(caminho_lp, destino_lp)
+                    registrar_log(f"SUCESSO (LP): Arquivo salvo como {novo_nome_lp}")
+                else:
+                    registrar_log(f"ERRO (LP): Download não concluído para a OS {os_num}")
+            except TimeoutException:
+                registrar_log(f"AVISO (LP): Botão 'Lista de Peças' não encontrado para a OS {os_num}.")
 
-            time.sleep(2)
-            seletor_fs = (By.XPATH, "//button[contains(., 'Imprimir')]")
-            wait.until(EC.element_to_be_clickable(seletor_fs)).click()
-            caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
-            if caminho_fs:
-                novo_nome_fs = f"{os_num}_FS.pdf"
-                destino_fs = os.path.join(PASTA_DESTINO_FS, novo_nome_fs)
-                shutil.move(caminho_fs, destino_fs)
-                registrar_log(f"SUCESSO (FS): Arquivo salvo como {novo_nome_fs}")
-            else:
-                raise Exception(f"Download (FS) não concluído para a OS {os_num}")
+            try:
+                time.sleep(2)
+                seletor_fs = (By.XPATH, "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[2]")
+                wait.until(EC.element_to_be_clickable(seletor_fs)).click()
+                caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
+                if caminho_fs:
+                    novo_nome_fs = f"{os_num}_FS.pdf"
+                    destino_fs = os.path.join(PASTA_DESTINO_FS, novo_nome_fs)
+                    shutil.move(caminho_fs, destino_fs)
+                    registrar_log(f"SUCESSO (FS): Arquivo salvo como {novo_nome_fs}")
+                else:
+                    registrar_log(f"ERRO (FS): Download não concluído para a OS {os_num}")
+            except TimeoutException:
+                registrar_log(f"AVISO (FS): Botão 'Ficha de Serviço' não encontrado para a OS {os_num}.")
             
-            registrar_log(f"Processo da OS {os_num} concluído com sucesso. Voltando para a página de busca.")
+            registrar_log(f"Processo da OS {os_num} concluído. Voltando para a página de busca.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return True
 
@@ -173,7 +183,7 @@ try:
     df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
     registrar_log(f"Arquivo Excel lido. Total de {len(df)} itens na lista.")
 
-    # Verificação de Duplicidade Retroativa
+    # --- ADIÇÃO: VERIFICAÇÃO DE DUPLICIDADE RETROATIVA ---
     registrar_log("Iniciando verificação retroativa de duplicidade (até 2 anos). Isso pode levar alguns minutos...")
     arquivos_existentes = set()
     data_limite = hoje - pd.DateOffset(years=2)
@@ -202,6 +212,7 @@ try:
     else:
         registrar_log("Verificação concluída. Nenhuma duplicidade encontrada.")
     registrar_log(f"Total de {len(df)} itens restantes para processar.")
+    # --- FIM DA ADIÇÃO ---
     
     if df.empty:
         messagebox.showinfo("Nenhum Item a Processar", "Todos os itens da lista já foram baixados anteriormente. Automação finalizada.")
@@ -212,8 +223,10 @@ try:
         options = webdriver.ChromeOptions() 
         options.add_argument("--start-maximized")
         options.add_experimental_option("prefs", {
-            "download.default_directory": DOWNLOAD_DIR, "download.prompt_for_download": False,
-            "download.directory_upgrade": True, "safebrowsing.enabled": True
+            "download.default_directory": DOWNLOAD_DIR,
+            "download.prompt_for_download": False,
+            "download.directory_upgrade": True,
+            "safebrowsing.enabled": True
         })
         driver = webdriver.Chrome(service=service, options=options)
 
