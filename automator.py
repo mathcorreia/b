@@ -294,6 +294,18 @@ class AutomatorGUI:
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
         except Exception as e:
             self.registrar_log(f"ERRO GERAL com OS {os_num}: {e}")
+            
+            # --- ADICIONADO: Captura de tela em caso de erro ---
+            timestamp_erro = datetime.now().strftime("%Y%m%d_%H%M%S")
+            nome_screenshot = f"erro_os_{os_num}_{timestamp_erro}.png"
+            screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
+            try:
+                if self.driver:
+                    self.driver.save_screenshot(screenshot_path)
+                    self.registrar_log(f"Screenshot de erro salvo em: '{screenshot_path}'")
+            except Exception as screenshot_error:
+                self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {screenshot_error}")
+
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
 
     def reprocessar_erros(self, df_original, wait, arquivos_existentes, pastas_destino):
@@ -341,3 +353,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = AutomatorGUI(root)
     root.mainloop()
+
