@@ -310,12 +310,20 @@ class ValidadorGUI:
             if not part_number or part_number == "Não encontrado":
                 return "PN não fornecido"
             
-            self.registrar_log("Mudando para o iframe 'contentAreaFrame'...")
+            self.registrar_log("Aguardando e mudando para o iframe 'contentAreaFrame'...")
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-            time.sleep(1) # Pausa para garantir que o conteúdo do iframe carregue
-            self.registrar_log("Mundança para iframe bem-sucedida.")
+            
+            # --- CORREÇÃO: Mudar para o iframe aninhado ---
+            self.registrar_log("Aguardando e mudando para o iframe aninhado 'ivuFrm_page0ivu0'...")
+            wait.until(EC.frame_to_be_available_and_switch_to_it((By.NAME, "ivuFrm_page0ivu2"))) # Usando NAME, pode ser mais estável
+            
+            self.registrar_log("Mundança para iframes bem-sucedida. Aguardando campo de busca...")
 
-            campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+            campo_pn = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.XPATH, "//input[contains(@id, 'PartNumber')]"))
+            )
+            self.registrar_log("Campo de busca encontrado e pronto para interação.")
+            
             campo_pn.clear()
             campo_pn.send_keys(part_number)
             wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')]"))).click()
