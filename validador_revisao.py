@@ -141,10 +141,8 @@ class ValidadorGUI:
                 self.update_status(f"Extraindo dados da OS: {os_num} ({index + 1}/{len(df)})...")
                 dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
                 if dados_fse:
-                    # Adiciona placeholders para as colunas da etapa 2
                     dados_fse["REV. Engenharia"] = ""
                     dados_fse["Status Comparação"] = ""
-                    # Salva a linha imediatamente no Excel
                     workbook = openpyxl.load_workbook(self.excel_path)
                     sheet = workbook.active
                     sheet.append(list(dados_fse.values()))
@@ -159,12 +157,11 @@ class ValidadorGUI:
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             
-            # Mapeia os nomes das colunas para os seus índices
             col_indices = {name: i+1 for i, name in enumerate(self.headers)}
 
-            for i, row in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                pn_extraido = row[col_indices["PN extraído"] - 1].value
-                rev_fse = row[col_indices["REV. FSE"] - 1].value
+            for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
+                pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
+                rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
                 
                 self.update_status(f"Comparando PN: {pn_extraido} ({i+1}/{sheet.max_row - 1})...")
 
@@ -178,13 +175,12 @@ class ValidadorGUI:
                         else:
                             status = "DIVERGENTE"
                     
-                    # Atualiza as células na linha atual
                     sheet.cell(row=i+2, column=col_indices["REV. Engenharia"], value=rev_engenharia)
                     sheet.cell(row=i+2, column=col_indices["Status Comparação"], value=status)
                 else:
                     sheet.cell(row=i+2, column=col_indices["Status Comparação"], value="PN NÃO ENCONTRADO NA FSE")
 
-                workbook.save(self.excel_path) # Salva o progresso a cada linha
+                workbook.save(self.excel_path)
 
             self.update_status("Processo concluído com sucesso!", "#008A00")
 
@@ -201,7 +197,7 @@ class ValidadorGUI:
 
     def navegar_para_fse_busca(self, wait):
         original_window = self.driver.current_window_handle
-        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click() # Link GFS
+        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
         wait.until(EC.number_of_windows_to_be(2))
         for handle in self.driver.window_handles:
             if handle != original_window:
@@ -254,6 +250,15 @@ class ValidadorGUI:
     
     def buscar_revisao_engenharia(self, wait, part_number):
         try:
+            if not part_number or part_number == "Não encontrado":
+                return "PN não fornecido"
+            
+            # --- NOVO: Mudar para o iframe onde o conteúdo da aplicação está ---
+            self.registrar_log("Mudando para o iframe 'contentAreaFrame'...")
+            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
+            self.registrar_log("Mundança para iframe bem-sucedida.")
+
+            # Agora, dentro do iframe, procurar os elementos
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
@@ -270,6 +275,11 @@ class ValidadorGUI:
             self.registrar_log(f"ERRO ao buscar revisão de engenharia para PN {part_number}: {e}")
             self.tirar_print_de_erro(part_number, "busca_revisao")
             return "Não encontrada"
+        finally:
+            # --- NOVO: Voltar sempre para o conteúdo principal da página ---
+            self.registrar_log("Voltando para o conteúdo principal da página...")
+            self.driver.switch_to.default_content()
+            self.registrar_log("Retorno ao conteúdo principal bem-sucedido.")
 
     def safe_find_text(self, by, value):
         try:
