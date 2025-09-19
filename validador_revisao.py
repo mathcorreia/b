@@ -325,9 +325,15 @@ class ValidadorGUI:
             
             campo_pn.clear()
             campo_pn.send_keys(part_number)
+            
+            # Pausa curta para dar tempo à página de reagir
+            time.sleep(0.5)
 
             self.registrar_log("Clicando no botão de busca ('Desenho' ou 'Consultar')...")
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')] | //span[contains(text(), 'Desenho')] | //a[contains(text(), 'Desenho')]"))).click()
+            # Procura pelo botão e clica via JavaScript para maior robustez
+            search_button_locator = (By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')] | //span[contains(text(), 'Desenho')] | //a[contains(text(), 'Desenho')]")
+            search_button = wait.until(EC.presence_of_element_located(search_button_locator))
+            self.driver.execute_script("arguments[0].click();", search_button)
 
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
