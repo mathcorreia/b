@@ -15,42 +15,52 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# --- NOVA JANELA DE ALERTA VISUAL ---
-class AlertaVisual:
-    def __init__(self, title, message, color="green"):
-        self.window = tk.Toplevel()
-        self.window.title(title)
-        self.window.geometry("450x170")
-        self.window.resizable(False, False)
+# --- JANELA DE STATUS VISUAL ---
+class StatusWindow:
+    def __init__(self):
+        self.root = tk.Tk()
+        self.root.title("Status da Automação")
+        self.root.geometry("450x170")
+        self.root.resizable(False, False)
+        self.root.eval('tk::PlaceWindow . center')
         
-        # --- A MÁGICA PARA FICAR SEMPRE NA FRENTE ---
-        self.window.attributes('-topmost', True)
-        
-        # Centraliza a janela
-        self.window.eval('tk::PlaceWindow . center')
-        
-        label = tk.Label(self.window, text=message, font=("Arial", 14, "bold"), wraplength=420, fg=color)
-        label.pack(expand=True, fill="both", padx=15, pady=15)
-        
-        ok_button = tk.Button(self.window, text="OK", command=self.window.destroy, width=15, font=("Arial", 10, "bold"))
-        ok_button.pack(pady=(0, 15))
-        
-        # Garante que o foco vá para a janela
-        self.window.focus_force()
-        # Impede que o script continue até a janela ser fechada
-        self.window.wait_window()
+        self.label = tk.Label(self.root, text="", font=("Arial", 16, "bold"), wraplength=420)
+        self.label.pack(expand=True, fill="both", padx=15, pady=15)
+        self.ok_button = tk.Button(self.root, text="OK", command=self.root.destroy, state="disabled", width=15, font=("Arial", 10, "bold"))
+        self.ok_button.pack(pady=(0, 15))
+
+    def show_wait(self, message):
+        self.label.config(text=message, fg="#E69500") # Amarelo/Laranja
+        self.ok_button.config(state="disabled")
+        self.root.deiconify()
+        self.root.update()
+
+    def show_ready(self, message):
+        self.label.config(text=message, fg="#008A00") # Verde
+        self.ok_button.config(state="normal")
+        self.root.deiconify()
+        self.root.mainloop()
+
+    def hide(self):
+        self.root.withdraw()
 
 # Oculta a janela raiz principal do Tkinter que não será usada
 root = tk.Tk()
 root.withdraw()
 
+# Função de log
+def registrar_log(mensagem):
+    # O LOG_PATH será definido dentro do bloco try principal
+    with open(LOG_PATH, 'a', encoding='utf-8') as log:
+        log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
+
 # --- BLOCO PRINCIPAL COM CAPTURA DE ERRO ---
 try:
     # Config geral
     try:
-        locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+        locale.setlocale(locale.LC_time, 'pt_BR.UTF-8')
     except locale.Error:
-        locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
+        locale.setlocale(locale.LC_time, 'Portuguese_Brazil')
 
     hoje = datetime.now()
     nome_mes_atual = hoje.strftime("%B").capitalize()
@@ -72,11 +82,6 @@ try:
     os.makedirs(PASTA_DESTINO_LP, exist_ok=True)
     os.makedirs(PASTA_DESTINO_FS, exist_ok=True)
     
-    # Registra log
-    def registrar_log(mensagem):
-        with open(LOG_PATH, 'a', encoding='utf-8') as log:
-            log.write(f"[{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}] {mensagem}\n")
-
     def esperar_download_concluir(pasta_download, timeout=60):
         segundos = 0
         for item in os.listdir(pasta_download):
@@ -109,55 +114,43 @@ try:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # Lista de Materiais (LM)
-            try:
-                time.sleep(1)
-                seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
-                wait.until(EC.element_to_be_clickable(seletor_lm)).click()
-                caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_lm:
-                    novo_nome_lm = f"{os_num}_LM.pdf"
-                    destino_lm = os.path.join(PASTA_DESTINO_LM, novo_nome_lm)
-                    shutil.move(caminho_lm, destino_lm)
-                    registrar_log(f"SUCESSO (LM): Arquivo salvo como {novo_nome_lm}")
-                else:
-                    registrar_log(f"ERRO (LM): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (LM): Botão 'Lista de Materiais' não encontrado para a OS {os_num}.")
+            time.sleep(1)
+            seletor_lm = (By.XPATH, "//button[contains(., 'Lista de Materiais')]")
+            wait.until(EC.element_to_be_clickable(seletor_lm)).click()
+            caminho_lm = esperar_download_concluir(DOWNLOAD_DIR)
+            if caminho_lm:
+                novo_nome_lm = f"{os_num}_LM.pdf"
+                destino_lm = os.path.join(PASTA_DESTINO_LM, novo_nome_lm)
+                shutil.move(caminho_lm, destino_lm)
+                registrar_log(f"SUCESSO (LM): Arquivo salvo como {novo_nome_lm}")
+            else:
+                raise Exception(f"Download (LM) não concluído para a OS {os_num}")
             
-            # Lista de Peças (LP)
-            try:
-                time.sleep(2)
-                seletor_lp = (By.XPATH, "//button[contains(., 'Lista de Peças')]")
-                wait.until(EC.element_to_be_clickable(seletor_lp)).click()
-                caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_lp:
-                    novo_nome_lp = f"{os_num}_LP.pdf"
-                    destino_lp = os.path.join(PASTA_DESTINO_LP, novo_nome_lp)
-                    shutil.move(caminho_lp, destino_lp)
-                    registrar_log(f"SUCESSO (LP): Arquivo salvo como {novo_nome_lp}")
-                else:
-                    registrar_log(f"ERRO (LP): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (LP): Botão 'Lista de Peças' não encontrado para a OS {os_num}.")
+            time.sleep(2)
+            seletor_lp = (By.XPATH, "//button[contains(., 'Lista de Peças')]")
+            wait.until(EC.element_to_be_clickable(seletor_lp)).click()
+            caminho_lp = esperar_download_concluir(DOWNLOAD_DIR)
+            if caminho_lp:
+                novo_nome_lp = f"{os_num}_LP.pdf"
+                destino_lp = os.path.join(PASTA_DESTINO_LP, novo_nome_lp)
+                shutil.move(caminho_lp, destino_lp)
+                registrar_log(f"SUCESSO (LP): Arquivo salvo como {novo_nome_lp}")
+            else:
+                raise Exception(f"Download (LP) não concluído para a OS {os_num}")
 
-            # Ficha de Serviço (FS)
-            try:
-                time.sleep(2)
-                seletor_fs = (By.XPATH, "//button[contains(., 'Imprimir')]")
-                wait.until(EC.element_to_be_clickable(seletor_fs)).click()
-                caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
-                if caminho_fs:
-                    novo_nome_fs = f"{os_num}_FS.pdf"
-                    destino_fs = os.path.join(PASTA_DESTINO_FS, novo_nome_fs)
-                    shutil.move(caminho_fs, destino_fs)
-                    registrar_log(f"SUCESSO (FS): Arquivo salvo como {novo_nome_fs}")
-                else:
-                    registrar_log(f"ERRO (FS): Download não concluído para a OS {os_num}")
-            except TimeoutException:
-                registrar_log(f"AVISO (FS): Botão 'Ficha de Serviço' não encontrado para a OS {os_num}.")
+            time.sleep(2)
+            seletor_fs = (By.XPATH, "//button[contains(., 'Imprimir')]")
+            wait.until(EC.element_to_be_clickable(seletor_fs)).click()
+            caminho_fs = esperar_download_concluir(DOWNLOAD_DIR)
+            if caminho_fs:
+                novo_nome_fs = f"{os_num}_FS.pdf"
+                destino_fs = os.path.join(PASTA_DESTINO_FS, novo_nome_fs)
+                shutil.move(caminho_fs, destino_fs)
+                registrar_log(f"SUCESSO (FS): Arquivo salvo como {novo_nome_fs}")
+            else:
+                raise Exception(f"Download (FS) não concluído para a OS {os_num}")
             
-            registrar_log(f"Processo da OS {os_num} concluído. Voltando para a página de busca.")
+            registrar_log(f"Processo da OS {os_num} concluído com sucesso. Voltando para a página de busca.")
             driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return True
 
@@ -219,21 +212,23 @@ try:
         options = webdriver.ChromeOptions() 
         options.add_argument("--start-maximized")
         options.add_experimental_option("prefs", {
-            "download.default_directory": DOWNLOAD_DIR,
-            "download.prompt_for_download": False,
-            "download.directory_upgrade": True,
-            "safebrowsing.enabled": True
+            "download.default_directory": DOWNLOAD_DIR, "download.prompt_for_download": False,
+            "download.directory_upgrade": True, "safebrowsing.enabled": True
         })
         driver = webdriver.Chrome(service=service, options=options)
 
+        # Inicia a janela de status e a esconde
+        janela_status = StatusWindow()
+        janela_status.hide()
+
         # Login e Navegação
         driver.get("https://web.embraer.com.br/irj/portal")
-        AlertaVisual("Ação Necessária (1/2)", "Faça o login no portal e, quando a página principal carregar, clique em OK.")
+        janela_status.show_ready("Faça o login no portal e, quando a página principal carregar, clique em OK.")
 
         wait = WebDriverWait(driver, 30)
         
-        # ETAPA DE NAVEGAÇÃO SEMI-AUTOMÁTICA
-        registrar_log("Iniciando navegação para GFS e trocando de aba...")
+        janela_status.show_wait("POR FAVOR, AGUARDE...\nNavegando para o sistema GFS e trocando de aba.")
+        
         original_window = driver.current_window_handle
         wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
         wait.until(EC.number_of_windows_to_be(2))
@@ -243,7 +238,7 @@ try:
                 break
         registrar_log("Foco alterado para a nova aba da aplicação GFS.")
         
-        AlertaVisual("Ação Necessária (2/2)", "Robô na aba correta.\n\nAGORA, clique em 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, clique em OK.")
+        janela_status.show_ready("AGORA PODE CLICAR EM OK\n\nNo navegador, clique em 'FSE' > 'Busca FSe' e, quando a tela carregar, clique em OK aqui.")
 
         # Loop de processamento principal
         registrar_log("Iniciando processamento principal do Excel...")
@@ -253,7 +248,7 @@ try:
             oc2 = row['OC_depois']
             processar_uma_os(driver, wait, os_num, oc1, oc2)
 
-        # BLOCO DE REPROCESSAMENTO DE ERROS
+        # Bloco de Reprocessamento de Erros
         registrar_log("--- Fim do processamento principal. Verificando erros para reprocessar. ---")
         erros_os = set()
         linhas_de_erro = []
