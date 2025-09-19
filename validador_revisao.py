@@ -128,7 +128,11 @@ class ValidadorGUI:
             df_input['OS'] = df_input['OS'].astype(str) # Garante que OS é string para comparação
             self.registrar_log(f"Arquivo 'lista.xlsx' lido com {len(df_input)} itens.")
 
-            # --- NOVO: LER OS JÁ VERIFICADAS E FILTRAR A LISTA ---
+            # --- Limita o DataFrame para teste ---
+            df_input = df_input.head(10)
+            self.registrar_log(f"MODO DE TESTE: Execução limitada às primeiras 10 OCs da lista.")
+
+            # --- LER OS JÁ VERIFICADAS E FILTRAR A LISTA ---
             self.update_status("Verificando OCs já processadas...")
             os_ja_verificadas = set()
             try:
@@ -141,10 +145,10 @@ class ValidadorGUI:
 
             df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
             novas_os_count = len(df_a_processar)
-            self.registrar_log(f"{len(df_input) - novas_os_count} OSs da lista já foram processadas e serão ignoradas.")
+            self.registrar_log(f"{len(df_input) - novas_os_count} OSs da lista de teste já foram processadas e serão ignoradas.")
 
             if novas_os_count == 0:
-                self.update_status("Nenhuma nova OS para extrair. Verificando comparações pendentes...", "#00529B")
+                self.update_status("Nenhuma nova OS para extrair na amostra de teste. Verificando comparações pendentes...", "#00529B")
             else:
                 self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OSs.")
                 
@@ -187,12 +191,15 @@ class ValidadorGUI:
             # Identifica as linhas que precisam de comparação
             linhas_a_comparar = []
             for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                status_cell = row_cells[col_indices["Status Comparação"] - 1]
-                if not status_cell.value: # Se a célula de status está vazia
-                    linhas_a_comparar.append(i + 2) # Guarda o número da linha
+                # Verifica se a OS da linha está na lista de teste antes de adicionar
+                os_da_linha = str(row_cells[col_indices["OS"] - 1].value)
+                if os_da_linha in df_input['OS'].values:
+                    status_cell = row_cells[col_indices["Status Comparação"] - 1]
+                    if not status_cell.value: # Se a célula de status está vazia
+                        linhas_a_comparar.append(i + 2) # Guarda o número da linha
 
             if not linhas_a_comparar:
-                self.update_status("Nenhuma comparação pendente. Processo finalizado!", "#008A00")
+                self.update_status("Nenhuma comparação pendente na amostra de teste. Processo finalizado!", "#008A00")
             else:
                 if not self.driver: # Inicia o driver se ainda não foi iniciado
                     self.update_status("Configurando o navegador para a Etapa 2...")
@@ -232,7 +239,7 @@ class ValidadorGUI:
 
                     workbook.save(self.excel_path)
 
-            self.update_status("Processo concluído com sucesso!", "#008A00")
+            self.update_status("Processo de teste concluído com sucesso!", "#008A00")
 
         except Exception as e:
             error_details = traceback.format_exc()
@@ -305,6 +312,7 @@ class ValidadorGUI:
             
             self.registrar_log("Mudando para o iframe 'contentAreaFrame'...")
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
+            time.sleep(1) # Pausa para garantir que o conteúdo do iframe carregue
             self.registrar_log("Mundança para iframe bem-sucedida.")
 
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
