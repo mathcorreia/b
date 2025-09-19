@@ -34,13 +34,13 @@ jobs:
 
       - name: Build Validador EXE
         run: |
-          pyinstaller --noconsole ^
-            --name ValidadorRevisao ^
-            --add-data "chromedriver.exe;." ^
-            --add-data "lista.xlsx;." ^
-            --onefile ^
-            --hidden-import=pandas._libs.tslibs.np_datetime ^
-            --hidden-import=pandas._libs.tslibs.nattype ^
+          pyinstaller --noconsole `
+            --name ValidadorRevisao `
+            --add-data "chromedriver.exe;." `
+            --add-data "lista.xlsx;." `
+            --onefile `
+            --hidden-import=pandas._libs.tslibs.np_datetime `
+            --hidden-import=pandas._libs.tslibs.nattype `
             validador_revisao.py
 
       - name: Upload Validador EXE
@@ -48,3 +48,4 @@ jobs:
         with:
           name: ValidadorRevisao
           path: dist/ValidadorRevisao.exe
+
