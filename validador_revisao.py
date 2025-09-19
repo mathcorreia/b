@@ -313,9 +313,7 @@ class ValidadorGUI:
             self.registrar_log("Aguardando e mudando para o iframe 'contentAreaFrame'...")
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
             
-            # --- CORREÇÃO: Mudar para o iframe aninhado ---
             self.registrar_log("Aguardando e mudando para o iframe aninhado...")
-            # Tentativa com o segundo ID que você encontrou
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "ivuFrm_page0ivu0")))
             
             self.registrar_log("Mundança para iframes bem-sucedida. Aguardando campo de busca...")
@@ -327,7 +325,9 @@ class ValidadorGUI:
             
             campo_pn.clear()
             campo_pn.send_keys(part_number)
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')]"))).click()
+
+            self.registrar_log("Clicando no botão de busca ('Desenho' ou 'Consultar')...")
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')] | //span[contains(text(), 'Desenho')] | //a[contains(text(), 'Desenho')]"))).click()
 
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
