@@ -93,94 +93,144 @@ class ValidadorGUI:
         self.user_action_event.set()
 
     def setup_excel(self):
-        if os.path.exists(self.excel_path):
-            os.remove(self.excel_path) # Garante um ficheiro limpo a cada execução
-            
-        workbook = openpyxl.Workbook()
-        sheet = workbook.active
-        sheet.title = "Dados FSE"
-        self.headers = [
-            "OS", "OC / Item", "CODEM / DT. REV. ROT.", "PN / REV. PN / LID", 
-            "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
-            "REV. Engenharia", "Status Comparação"
-        ]
-        sheet.append(self.headers)
-        for cell in sheet[1]:
-            cell.font = openpyxl.styles.Font(bold=True)
-        workbook.save(self.excel_path)
-        self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
+        """Cria o ficheiro Excel com o cabeçalho se ele não existir."""
+        if not os.path.exists(self.excel_path):
+            workbook = openpyxl.Workbook()
+            sheet = workbook.active
+            sheet.title = "Dados FSE"
+            self.headers = [
+                "OS", "OC / Item", "CODEM / DT. REV. ROT.", "PN / REV. PN / LID", 
+                "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
+                "REV. Engenharia", "Status Comparação"
+            ]
+            sheet.append(self.headers)
+            for cell in sheet[1]:
+                cell.font = openpyxl.styles.Font(bold=True)
+            workbook.save(self.excel_path)
+            self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
+        else:
+            # Se o ficheiro existe, apenas carrega os cabeçalhos para uso posterior
+            workbook = openpyxl.load_workbook(self.excel_path)
+            sheet = workbook.active
+            self.headers = [cell.value for cell in sheet[1]]
+            self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' já existe e será atualizado.")
 
     def run_automation(self):
         try:
             self.update_status("Iniciando configuração...")
             self.setup_excel()
 
+            # --- LEITURA DO EXCEL DE ENTRADA ---
             self.update_status("Lendo arquivo Excel 'lista.xlsx'...")
-            df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
-            df.rename(columns={df.columns[0]: 'OS'}, inplace=True)
-            df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-            self.registrar_log(f"Arquivo Excel lido com {len(df)} itens para processar.")
+            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
+            df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
+            df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
+            df_input['OS'] = df_input['OS'].astype(str) # Garante que OS é string para comparação
+            self.registrar_log(f"Arquivo 'lista.xlsx' lido com {len(df_input)} itens.")
 
-            self.update_status("Configurando o navegador...")
-            caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-            service = ChromeService(executable_path=caminho_chromedriver)
-            options = webdriver.ChromeOptions()
-            options.add_argument("--start-maximized")
-            self.driver = webdriver.Chrome(service=service, options=options)
-            wait = WebDriverWait(self.driver, 15)
+            # --- NOVO: LER OS JÁ VERIFICADAS E FILTRAR A LISTA ---
+            self.update_status("Verificando OCs já processadas...")
+            os_ja_verificadas = set()
+            try:
+                df_existente = pd.read_excel(self.excel_path)
+                if 'OS' in df_existente.columns:
+                    os_ja_verificadas = set(df_existente['OS'].astype(str))
+                self.registrar_log(f"Encontradas {len(os_ja_verificadas)} OSs no arquivo de resultados.")
+            except Exception as e:
+                self.registrar_log(f"Aviso: Não foi possível ler o arquivo Excel existente. Verificando todas as OSs. Erro: {e}")
 
-            self.driver.get("https://web.embraer.com.br/irj/portal")
-            self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
+            df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
+            novas_os_count = len(df_a_processar)
+            self.registrar_log(f"{len(df_input) - novas_os_count} OSs da lista já foram processadas e serão ignoradas.")
 
-            # --- ETAPA 1: EXTRAÇÃO E SALVAMENTO INICIAL ---
-            self.update_status("ETAPA 1: Navegando para o GFS para extrair dados...")
-            self.navegar_para_fse_busca(wait)
+            if novas_os_count == 0:
+                self.update_status("Nenhuma nova OS para extrair. Verificando comparações pendentes...", "#00529B")
+            else:
+                self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OSs.")
+                
+                # --- CONFIGURAÇÃO DO NAVEGADOR (só se necessário) ---
+                self.update_status("Configurando o navegador...")
+                caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                service = ChromeService(executable_path=caminho_chromedriver)
+                options = webdriver.ChromeOptions()
+                options.add_argument("--start-maximized")
+                self.driver = webdriver.Chrome(service=service, options=options)
+                wait = WebDriverWait(self.driver, 15)
+
+                self.driver.get("https://web.embraer.com.br/irj/portal")
+                self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
+
+                # --- ETAPA 1: EXTRAÇÃO E SALVAMENTO INICIAL (APENAS PARA NOVAS OSs) ---
+                self.update_status(f"ETAPA 1: Extraindo dados de {novas_os_count} novas OSs...")
+                self.navegar_para_fse_busca(wait)
+                
+                for index, row in df_a_processar.iterrows():
+                    os_num = str(row['OS'])
+                    self.update_status(f"Extraindo dados da OS: {os_num} ({index + 1}/{len(df_a_processar)})...")
+                    dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
+                    if dados_fse:
+                        dados_fse["REV. Engenharia"] = ""
+                        dados_fse["Status Comparação"] = ""
+                        workbook = openpyxl.load_workbook(self.excel_path)
+                        sheet = workbook.active
+                        sheet.append(list(dados_fse.values()))
+                        workbook.save(self.excel_path)
+                self.registrar_log("Etapa 1 (Extração de novas OSs) concluída.")
+
+            # --- ETAPA 2: ATUALIZAÇÃO COM COMPARAÇÃO (PARA ITENS PENDENTES) ---
+            self.update_status("ETAPA 2: Verificando comparações pendentes...")
             
-            for index, row in df.iterrows():
-                os_num = str(row['OS'])
-                self.update_status(f"Extraindo dados da OS: {os_num} ({index + 1}/{len(df)})...")
-                dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
-                if dados_fse:
-                    dados_fse["REV. Engenharia"] = ""
-                    dados_fse["Status Comparação"] = ""
-                    workbook = openpyxl.load_workbook(self.excel_path)
-                    sheet = workbook.active
-                    sheet.append(list(dados_fse.values()))
-                    workbook.save(self.excel_path)
-
-            self.registrar_log("Etapa 1 (Extração) concluída com sucesso.")
-
-            # --- ETAPA 2: ATUALIZAÇÃO COM COMPARAÇÃO ---
-            self.update_status("ETAPA 2: Navegando para Desenhos de Engenharia...")
-            self.navegar_para_desenhos_engenharia(wait)
-
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
-            
             col_indices = {name: i+1 for i, name in enumerate(self.headers)}
-
+            
+            # Identifica as linhas que precisam de comparação
+            linhas_a_comparar = []
             for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
-                rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
-                
-                self.update_status(f"Comparando PN: {pn_extraido} ({i+1}/{sheet.max_row - 1})...")
+                status_cell = row_cells[col_indices["Status Comparação"] - 1]
+                if not status_cell.value: # Se a célula de status está vazia
+                    linhas_a_comparar.append(i + 2) # Guarda o número da linha
 
-                if pn_extraido and pn_extraido != "Não encontrado":
-                    rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
-                    
-                    status = "FALHA NA BUSCA"
-                    if rev_engenharia and rev_fse and rev_engenharia != "Não encontrada":
-                        if rev_engenharia.strip().upper() == rev_fse.strip().upper():
-                            status = "OK"
-                        else:
-                            status = "DIVERGENTE"
-                    
-                    sheet.cell(row=i+2, column=col_indices["REV. Engenharia"], value=rev_engenharia)
-                    sheet.cell(row=i+2, column=col_indices["Status Comparação"], value=status)
-                else:
-                    sheet.cell(row=i+2, column=col_indices["Status Comparação"], value="PN NÃO ENCONTRADO NA FSE")
+            if not linhas_a_comparar:
+                self.update_status("Nenhuma comparação pendente. Processo finalizado!", "#008A00")
+            else:
+                if not self.driver: # Inicia o driver se ainda não foi iniciado
+                    self.update_status("Configurando o navegador para a Etapa 2...")
+                    caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                    service = ChromeService(executable_path=caminho_chromedriver)
+                    options = webdriver.ChromeOptions()
+                    options.add_argument("--start-maximized")
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    wait = WebDriverWait(self.driver, 15)
+                    self.driver.get("https://web.embraer.com.br/irj/portal")
+                    self.prompt_user_action("Faça o login para a etapa de comparação e clique em 'Continuar'.")
 
-                workbook.save(self.excel_path)
+                self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
+                self.navegar_para_desenhos_engenharia(wait)
+
+                for row_num in linhas_a_comparar:
+                    row_cells = sheet[row_num]
+                    pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
+                    rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
+                    
+                    self.update_status(f"Comparando PN: {pn_extraido} (linha {row_num})...")
+
+                    if pn_extraido and pn_extraido != "Não encontrado":
+                        rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+                        
+                        status = "FALHA NA BUSCA"
+                        if rev_engenharia and rev_fse and rev_engenharia != "Não encontrada":
+                            if rev_engenharia.strip().upper() == rev_fse.strip().upper():
+                                status = "OK"
+                            else:
+                                status = "DIVERGENTE"
+                        
+                        sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
+                        sheet.cell(row=row_num, column=col_indices["Status Comparação"], value=status)
+                    else:
+                        sheet.cell(row=row_num, column=col_indices["Status Comparação"], value="PN NÃO ENCONTRADO NA FSE")
+
+                    workbook.save(self.excel_path)
 
             self.update_status("Processo concluído com sucesso!", "#008A00")
 
@@ -253,12 +303,10 @@ class ValidadorGUI:
             if not part_number or part_number == "Não encontrado":
                 return "PN não fornecido"
             
-            # --- NOVO: Mudar para o iframe onde o conteúdo da aplicação está ---
             self.registrar_log("Mudando para o iframe 'contentAreaFrame'...")
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
             self.registrar_log("Mundança para iframe bem-sucedida.")
 
-            # Agora, dentro do iframe, procurar os elementos
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
@@ -276,7 +324,6 @@ class ValidadorGUI:
             self.tirar_print_de_erro(part_number, "busca_revisao")
             return "Não encontrada"
         finally:
-            # --- NOVO: Voltar sempre para o conteúdo principal da página ---
             self.registrar_log("Voltando para o conteúdo principal da página...")
             self.driver.switch_to.default_content()
             self.registrar_log("Retorno ao conteúdo principal bem-sucedido.")
