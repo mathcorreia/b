@@ -326,7 +326,7 @@ class ValidadorGUI:
         return False
 
     #
-# COLOQUE ESTA VERSÃO DE DEBUG TEMPORARIAMENTE NO LUGAR DA SUA buscar_revisao_engenharia
+# SUBSTITUA SUA FUNÇÃO POR ESTA VERSÃO DE DEBUG
 #
 def buscar_revisao_engenharia(self, wait, part_number):
     """
@@ -351,14 +351,13 @@ def buscar_revisao_engenharia(self, wait, part_number):
         
         # PAUSA O SCRIPT AQUI!
         self.registrar_log("!!! SCRIPT PAUSADO !!!")
-        self.registrar_log(">>> POR FAVOR, SIGA AS INSTRUÇÕES PARA INSPECIONAR O BOTÃO 'DESENHO' NO NAVEGADOR. <<<")
+        self.registrar_log(">>> AGORA, VÁ PARA O NAVEGADOR E SIGA AS INSTRUÇÕES PARA INSPECIONAR O BOTÃO 'DESENHO'. <<<")
         self.registrar_log(">>> APÓS COPIAR O HTML, VOLTE AQUI NO TERMINAL E PRESSIONE 'ENTER' PARA CONTINUAR. <<<")
         
         # Esta linha vai pausar a execução até você apertar Enter no terminal
         input() 
 
-        # Apenas para o script não quebrar depois da pausa
-        self.registrar_log("Continuando execução após a pausa...")
+        self.registrar_log("Continuando execução...")
         return "DEBUG_CONCLUIDO"
 
     except Exception as e:
@@ -367,7 +366,6 @@ def buscar_revisao_engenharia(self, wait, part_number):
         return "ERRO_DEBUG"
     finally:
         self.driver.switch_to.default_content()
-
 
 
     def safe_find_text(self, by, value):

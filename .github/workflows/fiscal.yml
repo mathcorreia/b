@@ -8,6 +8,7 @@ on:
 
 jobs:
   build:
+   
     runs-on: windows-latest
 
     steps:
@@ -32,19 +33,15 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: List files in the repository root
-        run: dir
-
       - name: Build Fiscal EXE
         run: |
           pyinstaller --noconsole `
-            --name ValidadorRevisao `
+            --name automacao_fiscal `
             --onefile `
-            --hidden-import=pandas._libs.tslibs.np_datetime `
-            --hidden-import=pandas._libs.tslibs.nattype `
+            --add-binary "chromedriver.exe;." `
             automacao_fiscal.py
 
-      - name: Upload Validador EXE
+      - name: Upload Fiscal EXE
         uses: actions/upload-artifact@v4
         with:
           name: Automacao_Fiscal_EXE
