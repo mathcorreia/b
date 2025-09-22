@@ -7,6 +7,7 @@ from tkinter import scrolledtext
 import threading
 from datetime import datetime
 import pandas as pd
+import locale # Importado para obter o nome do mês em português
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -63,7 +64,25 @@ class DownloaderGUI:
         self.log_text.pack(expand=True, fill='both', pady=5)
         
         self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
-        self.download_path = os.getcwd()
+        
+        # --- ALTERAÇÃO AQUI: Lógica para criar caminho dinâmico por mês ---
+        try:
+            # Define o local para português do Brasil para pegar o nome do mês corretamente
+            locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
+        except locale.Error:
+            self.registrar_log("Aviso: 'pt_BR.UTF-8' não disponível. Usando a localidade padrão.")
+
+        agora = datetime.now()
+        ano = agora.strftime('%Y')
+        mes_num = agora.strftime('%m')
+        mes_nome = agora.strftime('%B').capitalize()
+        
+        caminho_base = r"\\po.embrarer\Comercial\1OC's Embraer Produtivo 2025"
+        pasta_do_mes = f"{mes_num} - {mes_nome}"
+        
+        self.download_path = os.path.join(caminho_base, pasta_do_mes)
+        # --- FIM DA ALTERAÇÃO ---
+
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_closing(self):
@@ -98,6 +117,18 @@ class DownloaderGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state='disabled')
         
+        # --- ALTERAÇÃO AQUI: Cria a pasta do mês se ela não existir ---
+        try:
+            if not os.path.exists(self.download_path):
+                os.makedirs(self.download_path)
+                self.registrar_log(f"Pasta criada com sucesso: {self.download_path}")
+        except Exception as e:
+            self.update_status(f"ERRO: Não foi possível criar a pasta de destino: {self.download_path}", "red")
+            self.registrar_log(f"ERRO CRÍTICO ao criar pasta de destino: {e}")
+            self.action_button.config(state='normal', text="Iniciar Automação")
+            return
+        # --- FIM DA ALTERAÇÃO ---
+
         threading.Thread(target=self.run_automation, daemon=True).start()
 
     def prompt_user_action(self, message):
@@ -195,8 +226,8 @@ class DownloaderGUI:
             total_a_processar = len(df_a_processar)
 
             if total_a_processar == 0:
-                self.update_status("Todas as OCs da lista já foram baixadas.", "#008A00")
-                self.registrar_log("Nenhuma nova OC para processar. Finalizando.")
+                self.update_status(f"Todas as OCs da lista já foram baixadas na pasta de {datetime.now().strftime('%B')}.", "#008A00")
+                self.registrar_log(f"Nenhuma nova OC para processar na pasta de {datetime.now().strftime('%B')}.")
                 return
 
             self.registrar_log(f"Encontradas {total_a_processar} novas OCs para baixar.")
@@ -238,43 +269,34 @@ class DownloaderGUI:
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
                     
-                    # --- ALTERAÇÃO AQUI: LÓGICA PARA GERENCIAR ABAS ---
                     aba_principal = driver.current_window_handle
                     link_pdf.click()
                     self.registrar_log(f"Clique no link para baixar o PDF da OC {oc}.")
                     
-                    # Espera a nova aba abrir
                     wait.until(EC.number_of_windows_to_be(2))
                     
-                    # Muda para a nova aba
                     for handle in driver.window_handles:
                         if handle != aba_principal:
                             driver.switch_to.window(handle)
                             self.registrar_log("Foco mudou para a aba do PDF.")
                             break
                     
-                    # Espera o download e fecha a aba do PDF
                     self.esperar_download_concluir(oc)
                     self.registrar_log("Fechando a aba do PDF...")
                     driver.close()
                     
-                    # Volta para a aba principal
                     driver.switch_to.window(aba_principal)
                     self.registrar_log("Foco retornou para a aba principal.")
-                    # --- FIM DA ALTERAÇÃO ---
                     
-                    # --- ALTERAÇÃO AQUI: LÓGICA DE "RESET SUAVE" ---
                     self.registrar_log("Resetando a tela para a próxima OC...")
-                    driver.switch_to.default_content() # 1. Sai de todos os iframes
+                    driver.switch_to.default_content()
                     
-                    wait.until(EC.element_to_be_clickable(MENU_TODAS)).click() # 2. Clica em "Todas" para recarregar
+                    wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
                     self.registrar_log("Clicou em 'Todas' para resetar.")
 
-                    # 3. Re-entra nos iframes
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
                     self.registrar_log("Página resetada com sucesso para a próxima iteração.")
-                    # --- FIM DA ALTERAÇÃO ---
 
                 except Exception as e:
                     error_details = traceback.format_exc()
@@ -291,7 +313,7 @@ class DownloaderGUI:
                     wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-                    self.registrar_log("Recuperação concluída. Continuando com a próxima OC.")
+                    self.registrar_log("Recuperação do erro concluída. Continuando com a próxima OC.")
                     continue
 
             self.update_status("Processo concluído! Verifique os arquivos na pasta.", "#008A00")
