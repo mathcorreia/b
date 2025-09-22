@@ -23,7 +23,6 @@ INPUT_FILENAME = 'lista.xlsx'
 # --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
-# --- ALTERAÇÃO AQUI: Adicionado o seletor para o iframe aninhado ---
 IFRAME_ANINHADO = (By.ID, "ivuFrm_page0ivu0")
 
 # Navegação
@@ -218,16 +217,15 @@ class DownloaderGUI:
             menu_todas.click()
             self.registrar_log("Clicou no submenu 'Todas'.")
 
-            # --- ALTERAÇÃO AQUI: Lógica para entrar nos dois iframes ---
             self.registrar_log("Aguardando o iframe principal (contentAreaFrame)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
             self.registrar_log("Entrou no iframe principal.")
             
             self.registrar_log("Aguardando o iframe aninhado (ivuFrm_page0ivu0)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-            self.registrar_log("Entrou no iframe aninhado com sucesso. A busca deve funcionar agora.")
+            self.registrar_log("Entrou no iframe aninhado com sucesso.")
             
-            time.sleep(3) # Pausa para garantir carregamento do iframe final
+            time.sleep(3)
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
@@ -236,7 +234,6 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- LÓGICA DE PREENCHIMENTO (Simplificada, pois agora deve funcionar) ---
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
                     
                     campo_oc.click()
@@ -255,22 +252,36 @@ class DownloaderGUI:
                     self.registrar_log(f"Clique no link para baixar o PDF da OC {oc}.")
                     
                     self.esperar_download_concluir(oc)
-
-                except TimeoutException:
-                    msg = f"ERRO DE TIMEOUT para a OC {oc}. O robô não encontrou o campo de busca ou o link do PDF."
-                    self.registrar_log(msg)
-                    self.tirar_print_de_erro(oc)
-                    # --- LÓGICA PARA RECUPERAÇÃO DE ERRO ---
-                    self.registrar_log("Tentando recarregar e voltar aos iframes para a próxima OC...")
-                    driver.switch_to.default_content() # Sai de todos os iframes
-                    driver.refresh() # Recarrega a página principal
-                    # Re-entra nos iframes para a próxima iteração do loop
+                    
+                    # --- ALTERAÇÃO AQUI: LÓGICA PARA RESETAR A PÁGINA PARA O PRÓXIMO LOOP ---
+                    self.registrar_log("Resetando a página para a próxima OC...")
+                    driver.switch_to.default_content() # 1. Sai de todos os iframes
+                    driver.refresh() # 2. Recarrega a página principal
+                    
+                    # 3. Re-entra nos iframes para a próxima iteração
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-                    self.registrar_log("Recuperação concluída.")
+                    self.registrar_log("Página resetada com sucesso.")
+                    # --- FIM DA ALTERAÇÃO ---
+
                 except Exception as e:
-                    self.registrar_log(f"ERRO inesperado ao processar a OC {oc}: {e}")
+                    error_details = traceback.format_exc()
+                    self.registrar_log(f"ERRO ao processar a OC {oc}: {error_details}")
                     self.tirar_print_de_erro(oc)
+
+                    self.registrar_log("Tentando recarregar a página para recuperar do erro...")
+                    driver.switch_to.default_content()
+                    driver.refresh()
+                    self.registrar_log("Página recarregada. Re-navegando para a tela de busca...")
+                    # Re-navega para poder continuar com a próxima OC
+                    wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
+                    time.sleep(3)
+                    wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
+                    wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
+                    wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
+                    wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
+                    self.registrar_log("Recuperação do erro concluída. Continuando com a próxima OC.")
+                    continue # Pula para a próxima OC da lista
 
             self.update_status("Processo concluído! Verifique os arquivos na pasta.", "#008A00")
             self.registrar_log("Todas as OCs da lista foram processadas.")
