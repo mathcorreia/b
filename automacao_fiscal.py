@@ -129,7 +129,8 @@ class DownloaderGUI:
         try:
             self.driver = webdriver.Chrome(service=service, options=options)
             self.registrar_log(f"Navegador configurado. Downloads serão salvos em: {self.download_path}")
-            return self.driver, WebDriverWait(self.driver, 45)
+            # --- ALTERAÇÃO AQUI: Aumentando o tempo de espera máximo para 90 segundos ---
+            return self.driver, WebDriverWait(self.driver, 90)
         except Exception as e:
             self.registrar_log(f"ERRO ao iniciar o chromedriver: {e}")
             self.update_status("ERRO: Verifique se o chromedriver.exe está na pasta e é compatível com seu Chrome.", "red")
@@ -224,6 +225,10 @@ class DownloaderGUI:
             self.registrar_log("Aguardando o iframe de conteúdo...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
             self.registrar_log("Entrou no iframe principal.")
+            
+            # --- ALTERAÇÃO AQUI: Pausa estratégica para os scripts do iframe carregarem ---
+            self.registrar_log("Pausa de 5 segundos para garantir o carregamento do iframe...")
+            time.sleep(5)
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
@@ -232,7 +237,6 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- LÓGICA DE BUSCA (SEM CLIQUE EM 'PESQUISAR') ---
                     self.registrar_log("Aguardando campo da OC ficar visível...")
                     campo_oc = wait.until(EC.visibility_of_element_located(CAMPO_ORDEM_COMPRA))
                     
@@ -247,7 +251,6 @@ class DownloaderGUI:
 
                     self.registrar_log("Pressionando Enter para buscar...")
                     campo_oc.send_keys(Keys.RETURN)
-                    # --- FIM DA LÓGICA DE BUSCA ---
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
@@ -258,10 +261,11 @@ class DownloaderGUI:
                     self.esperar_download_concluir(oc)
 
                 except TimeoutException:
-                    msg = f"ERRO: Não foi possível encontrar o campo 'Ordem de Compra' ou o resultado para a OC {oc}. Verifique se a página carregou corretamente."
+                    msg = f"ERRO DE TIMEOUT: O robô não encontrou um elemento necessário (campo de busca ou link do PDF) para a OC {oc} em 90 segundos."
                     self.registrar_log(msg)
                     self.tirar_print_de_erro(oc)
                     driver.refresh()
+                    self.registrar_log("Página recarregada para tentar a próxima OC.")
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                 except Exception as e:
                     self.registrar_log(f"ERRO inesperado ao processar a OC {oc}: {e}")
