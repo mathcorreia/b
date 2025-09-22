@@ -22,7 +22,8 @@ INPUT_FILENAME = 'lista_ocs.xlsx' # Nome do arquivo Excel de entrada
 DOWNLOAD_DIR_NAME = "Ordens_de_Compra_Baixadas" # Pasta para salvar os PDFs
 
 # --- Seletores do Portal SAP (para Ordens de Compra) ---
-PORTAL_URL = "http://web.embraer.com.br:55100/irj/portal"
+# URL ATUALIZADA CONFORME SUA SOLICITAÇÃO
+PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 
 # Navegação
@@ -131,7 +132,7 @@ class DownloaderGUI:
         try:
             self.driver = webdriver.Chrome(service=service, options=options)
             self.registrar_log(f"Navegador configurado. Downloads serão salvos em: {self.download_path}")
-            return self.driver, WebDriverWait(self.driver, 45) # Timeout aumentado para 45s
+            return self.driver, WebDriverWait(self.driver, 45)
         except Exception as e:
             self.registrar_log(f"ERRO ao iniciar o chromedriver: {e}")
             self.update_status("ERRO: Verifique se o chromedriver.exe está na pasta e é compatível com seu Chrome.", "red")
@@ -175,7 +176,6 @@ class DownloaderGUI:
 
     def run_automation(self):
         try:
-            # --- ETAPA 1: INICIALIZAÇÃO E LOGIN MANUAL ---
             self.update_status("Iniciando automação...")
             driver, wait = self.setup_driver()
             if not driver: return
@@ -183,13 +183,11 @@ class DownloaderGUI:
             driver.get(PORTAL_URL)
             self.registrar_log(f"Navegador aberto em: {PORTAL_URL}")
             
-            # Pausa para o usuário fazer o login
             self.prompt_user_action("Por favor, faça o login e a autenticação no portal. Quando a página principal carregar, clique em 'Continuar'.")
             
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
             self.update_status("Login detectado. Iniciando busca pelas Ordens de Compra...")
 
-            # --- ETAPA 2: LEITURA DO ARQUIVO E FILTRAGEM ---
             df_input = pd.read_excel(INPUT_FILENAME, dtype={'OC': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
 
@@ -207,7 +205,6 @@ class DownloaderGUI:
 
             self.registrar_log(f"Encontradas {total_a_processar} novas OCs para baixar.")
 
-            # --- ETAPA 3: NAVEGAÇÃO AUTOMÁTICA PÓS-LOGIN ---
             self.update_status("Navegando pelo menu do portal...")
             wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
             self.registrar_log("Clicou no menu 'Suprimentos'.")
@@ -219,7 +216,6 @@ class DownloaderGUI:
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
             self.registrar_log("Entrou no iframe principal.")
 
-            # --- ETAPA 4: LOOP DE DOWNLOAD DAS OCs ---
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
                 oc = str(row['OC']).strip()
@@ -245,7 +241,6 @@ class DownloaderGUI:
                     msg = f"ERRO: Não foi possível encontrar o resultado para a OC {oc} após a busca. Verifique se a OC é válida ou se a página demorou muito para carregar."
                     self.registrar_log(msg)
                     self.tirar_print_de_erro(oc)
-                    # Volta para o conteúdo padrão para tentar a próxima OC
                     driver.switch_to.default_content()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                 except Exception as e:
