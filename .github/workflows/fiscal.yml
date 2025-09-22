@@ -1,0 +1,48 @@
+name: Build Automação Fiscal EXE with PyInstaller
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
+
+      - name: Cache Pip dependencies
+        uses: actions/cache@v3
+        with:
+          path: ~\AppData\Local\pip\Cache
+          key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Build Automação Fiscal EXE
+        run: |
+          pyinstaller --noconsole `
+            --name AutomacaoFiscal `
+            --onefile `
+            --add-binary "chromedriver.exe;." `
+            automacao_fiscal.py
+      
+      - name: Upload Automação Fiscal EXE
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutomacaoFiscal
+          path: dist/AutomacaoFiscal.exe

@@ -305,46 +305,61 @@ class ValidadorGUI:
         wait.until(EC.element_to_be_clickable((By.ID, "L2N1"))).click()
         self.prompt_user_action("Valide se a tela 'Desenhos Engenharia' está aberta e clique em 'Continuar'.")
     
+    def find_and_click(self, wait, selectors, description):
+        """
+        Tenta localizar um elemento usando uma lista de seletores XPath.
+        Clica no primeiro que encontrar e retorna True.
+        Se nenhum for encontrado, retorna False.
+        """
+        for i, selector in enumerate(selectors):
+            try:
+                self.registrar_log(f"Tentativa {i+1} para '{description}' com seletor: {selector}")
+                element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
+                self.registrar_log(f"SUCESSO: Elemento '{description}' encontrado.")
+                self.driver.execute_script("arguments[0].click();", element)
+                return True
+            except TimeoutException:
+                self.registrar_log(f"Tentativa {i+1} falhou.")
+                continue # Tenta o próximo seletor
+        
+        self.registrar_log(f"ERRO: Não foi possível localizar o elemento '{description}' com nenhum dos seletores.")
+        return False
+
     def buscar_revisao_engenharia(self, wait, part_number):
         """
         Busca a revisão de engenharia para um Part Number específico.
-        VERSÃO 2: Foco em robustez no clique do botão 'Desenho'.
+        VERSÃO 3: Utiliza múltiplas tentativas de seletores para máxima robustez.
         """
-        self.registrar_log(f"Iniciando busca v2 pela revisão do PN: {part_number}")
+        self.registrar_log(f"Iniciando busca v3 (robusta) pela revisão do PN: {part_number}")
         self.driver.switch_to.default_content()
 
         try:
             if not part_number or part_number == "Não encontrado":
-                self.registrar_log("PN não fornecido ou inválido. Pulando busca.")
                 return "PN não fornecido"
 
             # 1. Navega para a estrutura de iframes
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
-            self.registrar_log("Navegação para iframes concluída.")
 
-            # 2. Interage com o formulário de busca
+            # 2. Preenche o campo de busca
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
-            self.registrar_log(f"Campo preenchido com o Part Number: {part_number}")
+            self.registrar_log(f"Campo preenchido com: {part_number}")
+            time.sleep(0.5)
 
-
-            # 3. Adiciona uma pequena pausa estratégica para a UI reagir
-            time.sleep(0.5) 
-
-            # 4. Tenta localizar e clicar no botão com um seletor mais direto
-            self.registrar_log("Tentando localizar o botão 'Desenho'...")
-            # Este seletor busca por uma tag <a> que contenha o texto 'Desenho' em qualquer lugar dentro dela.
-            # É uma das formas mais robustas de encontrar links/botões.
-            seletor_botao_desenho = "//a[contains(., 'Desenho')]"
+            # 3. Usa o método robusto para encontrar e clicar no botão "Desenho"
+            seletores_desenho = [
+                "//a[contains(., 'Desenho')]",                     # Se for um link <a> com o texto
+                "//span[text()='Desenho']/ancestor::a",           # Se o texto estiver num <span> dentro de um <a>
+                "//a[@title='Desenho']",                          # Se o texto estiver no atributo 'title' do link
+                "//span[contains(text(), 'Desenho')]/parent::*"   # Se o texto estiver num <span>, clica no elemento pai
+            ]
             
-            botao_desenho = wait.until(EC.presence_of_element_located((By.XPATH, seletor_botao_desenho)))
-            self.registrar_log("Botão 'Desenho' localizado. Executando clique com JavaScript.")
-            
-            self.driver.execute_script("arguments[0].click();", botao_desenho)
+            if not self.find_and_click_robust(wait, seletores_desenho, "Botão Desenho"):
+                raise TimeoutException("Falha ao clicar no botão 'Desenho' após múltiplas tentativas.")
 
-            # 5. Aguarda o resultado e extrai a revisão
+            # 4. Aguarda e extrai a revisão
             self.registrar_log("Aguardando o resultado da busca...")
             seletor_rev = "//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
@@ -353,24 +368,27 @@ class ValidadorGUI:
             revisao = revisao_raw.split(" ")[-1]
             self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
             
-            # 6. Clica em "Voltar" para preparar a próxima busca
-            self.registrar_log("Retornando para a tela de busca...")
-            # Usamos o mesmo método robusto para o botão 'Voltar'
-            botao_voltar = wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(., 'Voltar')]")))
-            self.driver.execute_script("arguments[0].click();", botao_voltar)
+            # 5. Usa o método robusto para clicar em "Voltar"
+            seletores_voltar = [
+                "//a[contains(., 'Voltar')]",
+                "//span[text()='Voltar']/ancestor::a",
+                "//a[@title='Voltar']"
+            ]
+            if not self.find_and_click_robust(wait, seletores_voltar, "Botão Voltar"):
+                raise TimeoutException("Falha ao clicar no botão 'Voltar' para retornar.")
 
-            # 7. Confirma o retorno
+            # 6. Confirma o retorno à tela de busca
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             self.registrar_log("Retorno à tela de busca confirmado.")
             
             return revisao
 
-        except TimeoutException:
-            self.registrar_log(f"ERRO (Timeout): Botão 'Desenho' não encontrado ou resultado não apareceu para o PN {part_number}.")
+        except TimeoutException as e_timeout:
+            self.registrar_log(f"ERRO (Timeout) no PN {part_number}: {e_timeout}")
             self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
             return "Não encontrada"
         except Exception as e:
-            self.registrar_log(f"ERRO GERAL ao buscar revisão para PN {part_number}: {traceback.format_exc()}")
+            self.registrar_log(f"ERRO GERAL no PN {part_number}: {traceback.format_exc()}")
             self.tirar_print_de_erro(part_number, "busca_revisao_erro")
             return "Falha na busca"
         finally:
