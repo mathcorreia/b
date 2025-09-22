@@ -30,9 +30,6 @@ MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
 MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
 
-# --- ALTERAÇÃO AQUI: Novo seletor para o botão 'Pesquisar' ---
-BOTAO_PESQUISAR = (By.XPATH, "//button[contains(@title, 'Pesquisar')]")
-
 # Ações na página de busca
 CAMPO_ORDEM_COMPRA = (By.ID, "GOCI.Wzsulmm100View.txtPO")
 LINK_EXIBE_PDF = (By.ID, "GOCI.Wzsulmm100View.lnaPDF.0")
@@ -235,13 +232,7 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- LÓGICA DE BUSCA CORRIGIDA ---
-                    # 1. Clica no botão "Pesquisar" para revelar os campos de filtro
-                    self.registrar_log("Aguardando o botão 'Pesquisar' ficar clicável...")
-                    wait.until(EC.element_to_be_clickable(BOTAO_PESQUISAR)).click()
-                    self.registrar_log("Clicou em 'Pesquisar'.")
-
-                    # 2. Aguarda o campo da OC aparecer e o preenche
+                    # --- LÓGICA DE BUSCA (SEM CLIQUE EM 'PESQUISAR') ---
                     self.registrar_log("Aguardando campo da OC ficar visível...")
                     campo_oc = wait.until(EC.visibility_of_element_located(CAMPO_ORDEM_COMPRA))
                     
@@ -256,7 +247,7 @@ class DownloaderGUI:
 
                     self.registrar_log("Pressionando Enter para buscar...")
                     campo_oc.send_keys(Keys.RETURN)
-                    # --- FIM DA LÓGICA CORRIGIDA ---
+                    # --- FIM DA LÓGICA DE BUSCA ---
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
@@ -267,10 +258,9 @@ class DownloaderGUI:
                     self.esperar_download_concluir(oc)
 
                 except TimeoutException:
-                    msg = f"ERRO: Não foi possível encontrar o resultado para a OC {oc} após a busca. Verifique se a OC é válida ou se a página demorou muito para carregar."
+                    msg = f"ERRO: Não foi possível encontrar o campo 'Ordem de Compra' ou o resultado para a OC {oc}. Verifique se a página carregou corretamente."
                     self.registrar_log(msg)
                     self.tirar_print_de_erro(oc)
-                    # Recarrega a página para tentar a próxima OC em um estado limpo
                     driver.refresh()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                 except Exception as e:
