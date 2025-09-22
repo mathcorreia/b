@@ -214,15 +214,24 @@ class ValidadorGUI:
 
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
         try:
-            # ... (código de extração permanece o mesmo)
             self.registrar_log(f"Buscando OS: {os_num} | OC: {oc1}/{oc2}")
             wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']"))).clear()
             self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderNumber']").send_keys(oc1)
             wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']"))).clear()
             self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderLine']").send_keys(oc2)
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
-            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
+            # --- CORREÇÃO: Bloco de erro específico para OS não encontrada ---
+            try:
+                details_button = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))
+                )
+                details_button.click()
+            except TimeoutException:
+                self.registrar_log(f"ERRO: OS {os_num} não foi encontrada após a busca. Pulando.")
+                self.tirar_print_de_erro(os_num, "OS_nao_encontrada")
+                return None
+
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
             dados = {"OS": os_num}
@@ -242,7 +251,7 @@ class ValidadorGUI:
             dados["REV. FSE"] = rev_match.group(1) if rev_match else "Não encontrada"
             return dados
         except Exception as e:
-            self.registrar_log(f"ERRO ao extrair dados da OS {os_num}: {e}")
+            self.registrar_log(f"ERRO inesperado ao extrair dados da OS {os_num}: {e}")
             self.tirar_print_de_erro(os_num, "extracao_FSE")
             return None
     
