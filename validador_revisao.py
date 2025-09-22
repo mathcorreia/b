@@ -326,14 +326,18 @@ class ValidadorGUI:
             campo_pn.clear()
             campo_pn.send_keys(part_number)
             
-            # Pausa curta para dar tempo à página de reagir
-            time.sleep(0.5)
+            # --- NOVA LÓGICA DE CLIQUE ---
+            self.registrar_log("Voltando para o iframe pai para encontrar o botão de busca...")
+            self.driver.switch_to.parent_frame()
 
             self.registrar_log("Clicando no botão de busca ('Desenho' ou 'Consultar')...")
-            # Procura pelo botão e clica via JavaScript para maior robustez
             search_button_locator = (By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')] | //span[contains(text(), 'Desenho')] | //a[contains(text(), 'Desenho')]")
-            search_button = wait.until(EC.presence_of_element_located(search_button_locator))
+            search_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(search_button_locator))
             self.driver.execute_script("arguments[0].click();", search_button)
+
+            # Re-entrar no iframe interno para ler os resultados
+            self.registrar_log("Re-entrando no iframe aninhado para ler os resultados...")
+            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "ivuFrm_page0ivu0")))
 
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
@@ -372,3 +376,4 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ValidadorGUI(root)
     root.mainloop()
+
