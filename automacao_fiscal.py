@@ -19,7 +19,8 @@ from selenium.common.exceptions import TimeoutException
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
-INPUT_FILENAME = 'lista.xlsx'
+# --- ALTERAÇÃO AQUI: Nome do arquivo de entrada atualizado ---
+INPUT_FILENAME = 'PO-ACK.xlsx'
 
 # --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
@@ -161,8 +162,8 @@ class DownloaderGUI:
             return None, None
 
     def esperar_download_concluir(self, oc_num, timeout=90):
-        self.registrar_log(f"Aguardando download do PDF para a OC {oc_num}...")
-        self.update_status(f"Aguardando download para OC {oc_num}...")
+        self.registrar_log(f"Aguardando download do PDF para a PO {oc_num}...")
+        self.update_status(f"Aguardando download para PO {oc_num}...")
         
         tempo_inicial = time.time()
         while time.time() - tempo_inicial < timeout:
@@ -170,10 +171,9 @@ class DownloaderGUI:
                 time.sleep(1)
                 continue
 
-            # Procura pelo arquivo PDF recém-baixado
             pdfs_na_pasta = [os.path.join(self.download_path, f) for f in os.listdir(self.download_path) if f.lower().endswith('.pdf') and not f.startswith('OC_')]
             if pdfs_na_pasta:
-                arquivo_recente = pdfs_na_pasta[0] # Pega o primeiro que encontrar
+                arquivo_recente = pdfs_na_pasta[0]
                 novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
                 time.sleep(2)
 
@@ -182,18 +182,18 @@ class DownloaderGUI:
                     self.registrar_log(f"Download concluído e renomeado para: {os.path.basename(novo_nome)}")
                     return True
                 except Exception as e:
-                    self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para OC {oc_num}: {e}. Tentando novamente.")
+                    self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para PO {oc_num}: {e}. Tentando novamente.")
                     time.sleep(3)
                     try:
                         shutil.move(arquivo_recente, novo_nome)
                         self.registrar_log(f"Sucesso na segunda tentativa: {os.path.basename(novo_nome)}")
                         return True
                     except Exception as e2:
-                        self.registrar_log(f"ERRO: Falha ao renomear para OC {oc_num}: {e2}")
+                        self.registrar_log(f"ERRO: Falha ao renomear para PO {oc_num}: {e2}")
                         return False
             time.sleep(1)
 
-        self.registrar_log(f"ERRO: Tempo limite de {timeout}s excedido esperando o download da OC {oc_num}.")
+        self.registrar_log(f"ERRO: Tempo limite de {timeout}s excedido esperando o download da PO {oc_num}.")
         return False
 
     def run_automation(self):
@@ -210,21 +210,22 @@ class DownloaderGUI:
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
             self.update_status("Login detectado. Buscando Ordens de Compra...")
 
-            df_input = pd.read_excel(INPUT_FILENAME, sheet_name='lista', dtype={'Nº Os Cliente': str})
-            self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
+            # --- ALTERAÇÃO AQUI: Lendo a coluna 'PO' e tratando como string ---
+            df_input = pd.read_excel(INPUT_FILENAME, dtype={'PO': str})
+            self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} POs.")
 
-            df_input['OC_BASE'] = df_input['Nº Os Cliente'].str.split('/', expand=True)[0]
-
+            # --- ALTERAÇÃO AQUI: Lógica de split removida ---
+            # A verificação de arquivos existentes agora usa a coluna 'PO' diretamente
             ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
-            df_a_processar = df_input[~df_input['OC_BASE'].isin(ocs_ja_baixadas)].copy()
+            df_a_processar = df_input[~df_input['PO'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
 
             if total_a_processar == 0:
-                self.update_status(f"Todas as OCs da lista já foram baixadas na pasta de {datetime.now().strftime('%B')}.", "#008A00")
-                self.registrar_log(f"Nenhuma nova OC para processar na pasta de {datetime.now().strftime('%B')}.")
+                self.update_status(f"Todas as POs da lista já foram baixadas na pasta de {datetime.now().strftime('%B')}.", "#008A00")
+                self.registrar_log(f"Nenhuma nova PO para processar na pasta de {datetime.now().strftime('%B')}.")
                 return
 
-            self.registrar_log(f"Encontradas {total_a_processar} novas OCs para baixar.")
+            self.registrar_log(f"Encontradas {total_a_processar} novas POs para baixar.")
 
             self.update_status("Navegando pelo menu do portal...")
             
@@ -247,18 +248,17 @@ class DownloaderGUI:
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
-                oc = str(row['OC_BASE']).strip()
+                # --- ALTERAÇÃO AQUI: Usando a coluna 'PO' diretamente ---
+                oc = str(row['PO']).strip()
                 processadas_count += 1
-                self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
+                self.update_status(f"Processando PO: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- ALTERAÇÃO AQUI: Limpa arquivos PDF soltos antes de baixar ---
-                    self.registrar_log("Limpando PDFs antigos da pasta de download para evitar erros de renomeação...")
+                    self.registrar_log("Limpando PDFs antigos da pasta de download...")
                     for item in os.listdir(self.download_path):
                         if item.lower().endswith('.pdf') and not item.startswith('OC_'):
                             os.remove(os.path.join(self.download_path, item))
                             self.registrar_log(f"Arquivo antigo removido: {item}")
-                    # --- FIM DA ALTERAÇÃO ---
 
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
                     campo_oc.click()
@@ -266,14 +266,14 @@ class DownloaderGUI:
                     campo_oc.clear()
                     campo_oc.send_keys(oc)
                     campo_oc.send_keys(Keys.RETURN)
-                    self.registrar_log(f"Busca realizada para a OC {oc}.")
+                    self.registrar_log(f"Busca realizada para a PO {oc}.")
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
                     
                     aba_principal = driver.current_window_handle
                     link_pdf.click()
-                    self.registrar_log(f"Clique no link para baixar o PDF da OC {oc}.")
+                    self.registrar_log(f"Clique no link para baixar o PDF da PO {oc}.")
                     
                     wait.until(EC.number_of_windows_to_be(2))
                     
@@ -290,7 +290,7 @@ class DownloaderGUI:
                     driver.switch_to.window(aba_principal)
                     self.registrar_log("Foco retornou para a aba principal.")
                     
-                    self.registrar_log("Resetando a tela para a próxima OC...")
+                    self.registrar_log("Resetando a tela para a próxima PO...")
                     driver.switch_to.default_content()
                     
                     wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
@@ -302,7 +302,7 @@ class DownloaderGUI:
 
                 except Exception as e:
                     error_details = traceback.format_exc()
-                    self.registrar_log(f"ERRO ao processar a OC {oc}: {error_details}")
+                    self.registrar_log(f"ERRO ao processar a PO {oc}: {error_details}")
                     self.tirar_print_de_erro(oc)
 
                     self.registrar_log("Tentando recarregar a página para recuperar do erro...")
@@ -315,18 +315,19 @@ class DownloaderGUI:
                     wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-                    self.registrar_log("Recuperação do erro concluída. Continuando com a próxima OC.")
+                    self.registrar_log("Recuperação do erro concluída. Continuando com a próxima PO.")
                     continue
 
             self.update_status("Processo concluído! Verifique os arquivos na pasta.", "#008A00")
-            self.registrar_log("Todas as OCs da lista foram processadas.")
+            self.registrar_log("Todas as POs da lista foram processadas.")
 
         except FileNotFoundError:
             msg = f"ERRO CRÍTICO: Arquivo '{INPUT_FILENAME}' não encontrado."
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except KeyError:
-            msg = "ERRO CRÍTICO: A coluna 'Nº Os Cliente' não foi encontrada na planilha 'lista'."
+            # --- ALTERAÇÃO AQUI: Mensagem de erro atualizada para a coluna 'PO' ---
+            msg = "ERRO CRÍTICO: A coluna 'PO' não foi encontrada na sua planilha. Por favor, verifique o nome da coluna."
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except Exception as e:
