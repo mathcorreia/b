@@ -231,22 +231,25 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- LÓGICA DE PREENCHIMENTO COM JAVASCRIPT ---
-                    # 1. Espera o campo estar visível na tela
+                    # --- LÓGICA DE PREENCHIMENTO AVANÇADA COM JAVASCRIPT ---
                     self.registrar_log("Aguardando campo da OC ficar visível...")
                     campo_oc = wait.until(EC.visibility_of_element_located(CAMPO_ORDEM_COMPRA))
                     
-                    # 2. Usa JavaScript para injetar o valor diretamente no campo
-                    self.registrar_log(f"Inserindo OC {oc} no campo via JavaScript...")
-                    driver.execute_script(f"arguments[0].value='{oc}';", campo_oc)
+                    # Usa JavaScript para focar, definir o valor e disparar o evento 'change'
+                    self.registrar_log(f"Preenchendo OC {oc} e disparando evento 'change' via JavaScript...")
+                    js_script = f"""
+                    arguments[0].focus();
+                    arguments[0].value = '{oc}';
+                    arguments[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
+                    """
+                    driver.execute_script(js_script, campo_oc)
                     
-                    # 3. Pausa para garantir que a página processe o valor injetado
-                    time.sleep(1)
+                    time.sleep(1) # Pausa para o script da página reagir ao evento
 
-                    # 4. Envia a tecla ENTER no campo para acionar a busca
+                    # Envia a tecla ENTER para acionar a busca
                     self.registrar_log("Pressionando Enter para buscar...")
                     campo_oc.send_keys(Keys.RETURN)
-                    # --- FIM DA NOVA LÓGICA ---
+                    # --- FIM DA LÓGICA AVANÇADA ---
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
