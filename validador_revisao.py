@@ -109,6 +109,7 @@ class ValidadorGUI:
             workbook.save(self.excel_path)
             self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
         else:
+            # Se o ficheiro existe, apenas carrega os cabeçalhos para uso posterior
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             self.headers = [cell.value for cell in sheet[1]]
@@ -119,72 +120,124 @@ class ValidadorGUI:
             self.update_status("Iniciando configuração...")
             self.setup_excel()
 
-            # --- LEITURA E FILTRAGEM DE DADOS ---
+            # --- LEITURA DO EXCEL DE ENTRADA ---
+            self.update_status("Lendo arquivo Excel 'lista.xlsx'...")
             df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-            df_input['OS'] = df_input['OS'].astype(str)
-            
-            df_input = df_input.head(10) # Modo de teste
-            self.registrar_log(f"MODO DE TESTE: Execução limitada às primeiras 10 OCs.")
+            df_input['OS'] = df_input['OS'].astype(str) # Garante que OS é string para comparação
+            self.registrar_log(f"Arquivo 'lista.xlsx' lido com {len(df_input)} itens.")
 
+            # --- Limita o DataFrame para teste ---
+            df_input = df_input.head(10)
+            self.registrar_log(f"MODO DE TESTE: Execução limitada às primeiras 10 OCs da lista.")
+
+            # --- LER OS JÁ VERIFICADAS E FILTRAR A LISTA ---
+            self.update_status("Verificando OCs já processadas...")
             os_ja_verificadas = set()
             try:
                 df_existente = pd.read_excel(self.excel_path)
                 if 'OS' in df_existente.columns:
                     os_ja_verificadas = set(df_existente['OS'].astype(str))
-            except Exception: pass
+                self.registrar_log(f"Encontradas {len(os_ja_verificadas)} OSs no arquivo de resultados.")
+            except Exception as e:
+                self.registrar_log(f"Aviso: Não foi possível ler o arquivo Excel existente. Verificando todas as OSs. Erro: {e}")
 
             df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
-            if df_a_processar.empty:
-                self.update_status("Nenhuma OS nova para processar na lista de teste.", "#008A00")
-                return
+            novas_os_count = len(df_a_processar)
+            self.registrar_log(f"{len(df_input) - novas_os_count} OSs da lista de teste já foram processadas e serão ignoradas.")
 
-            # --- INICIALIZAÇÃO DO NAVEGADOR ---
-            self.update_status("Configurando o navegador...")
-            caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-            service = ChromeService(executable_path=caminho_chromedriver)
-            options = webdriver.ChromeOptions()
-            options.add_argument("--start-maximized")
-            self.driver = webdriver.Chrome(service=service, options=options)
-            wait = WebDriverWait(self.driver, 15)
+            if novas_os_count == 0:
+                self.update_status("Nenhuma nova OS para extrair na amostra de teste. Verificando comparações pendentes...", "#00529B")
+            else:
+                self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OSs.")
+                
+                # --- CONFIGURAÇÃO DO NAVEGADOR (só se necessário) ---
+                self.update_status("Configurando o navegador...")
+                caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                service = ChromeService(executable_path=caminho_chromedriver)
+                options = webdriver.ChromeOptions()
+                options.add_argument("--start-maximized")
+                self.driver = webdriver.Chrome(service=service, options=options)
+                wait = WebDriverWait(self.driver, 15)
 
-            self.driver.get("https://web.embraer.com.br/irj/portal")
-            self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
+                self.driver.get("https://web.embraer.com.br/irj/portal")
+                self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
 
-            # --- LOOP PRINCIPAL "ITEM A ITEM" ---
-            for index, row in df_a_processar.iterrows():
-                os_num = str(row['OS'])
-                self.update_status(f"Processando OS: {os_num} ({index + 1}/{len(df_a_processar)})...")
-
-                # ETAPA 1: EXTRAIR DADOS DO GFS
+                # --- ETAPA 1: EXTRAÇÃO E SALVAMENTO INICIAL (APENAS PARA NOVAS OSs) ---
+                self.update_status(f"ETAPA 1: Extraindo dados de {novas_os_count} novas OSs...")
                 self.navegar_para_fse_busca(wait)
-                dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
+                
+                for index, row in df_a_processar.iterrows():
+                    os_num = str(row['OS'])
+                    self.update_status(f"Extraindo dados da OS: {os_num} ({index + 1}/{len(df_a_processar)})...")
+                    dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
+                    if dados_fse:
+                        dados_fse["REV. Engenharia"] = ""
+                        dados_fse["Status Comparação"] = ""
+                        workbook = openpyxl.load_workbook(self.excel_path)
+                        sheet = workbook.active
+                        sheet.append(list(dados_fse.values()))
+                        workbook.save(self.excel_path)
+                self.registrar_log("Etapa 1 (Extração de novas OSs) concluída.")
 
-                if not dados_fse:
-                    self.registrar_log(f"Falha na extração da OS {os_num}. Registrando erro.")
-                    dados_fse = {h: "" for h in self.headers}
-                    dados_fse["OS"] = os_num
-                    dados_fse["Status Comparação"] = "FALHA NA EXTRAÇÃO"
-                else:
-                    # ETAPA 2: BUSCAR REVISÃO NA ENGENHARIA
-                    self.navegar_para_desenhos_engenharia(wait)
-                    pn_extraido = dados_fse["PN extraído"]
-                    rev_fse = dados_fse["REV. FSE"]
-                    rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+            # --- ETAPA 2: ATUALIZAÇÃO COM COMPARAÇÃO (PARA ITENS PENDENTES) ---
+            self.update_status("ETAPA 2: Verificando comparações pendentes...")
+            
+            workbook = openpyxl.load_workbook(self.excel_path)
+            sheet = workbook.active
+            col_indices = {name: i+1 for i, name in enumerate(self.headers)}
+            
+            # Identifica as linhas que precisam de comparação
+            linhas_a_comparar = []
+            for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
+                # Verifica se a OS da linha está na lista de teste antes de adicionar
+                os_da_linha = str(row_cells[col_indices["OS"] - 1].value)
+                if os_da_linha in df_input['OS'].values:
+                    status_cell = row_cells[col_indices["Status Comparação"] - 1]
+                    if not status_cell.value: # Se a célula de status está vazia
+                        linhas_a_comparar.append(i + 2) # Guarda o número da linha
 
-                    dados_fse["REV. Engenharia"] = rev_engenharia
-                    status = "FALHA NA BUSCA"
-                    if rev_engenharia != "Não encontrada" and rev_fse != "Não encontrada":
-                        status = "OK" if rev_engenharia.strip().upper() == rev_fse.strip().upper() else "DIVERGENTE"
-                    dados_fse["Status Comparação"] = status
+            if not linhas_a_comparar:
+                self.update_status("Nenhuma comparação pendente na amostra de teste. Processo finalizado!", "#008A00")
+            else:
+                if not self.driver: # Inicia o driver se ainda não foi iniciado
+                    self.update_status("Configurando o navegador para a Etapa 2...")
+                    caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                    service = ChromeService(executable_path=caminho_chromedriver)
+                    options = webdriver.ChromeOptions()
+                    options.add_argument("--start-maximized")
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    wait = WebDriverWait(self.driver, 15)
+                    self.driver.get("https://web.embraer.com.br/irj/portal")
+                    self.prompt_user_action("Faça o login para a etapa de comparação e clique em 'Continuar'.")
 
-                # SALVAR RESULTADO FINAL NO EXCEL
-                workbook = openpyxl.load_workbook(self.excel_path)
-                sheet = workbook.active
-                sheet.append(list(dados_fse.values()))
-                workbook.save(self.excel_path)
-                self.registrar_log(f"OS {os_num} processada e salva com status: {dados_fse['Status Comparação']}")
+                self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
+                self.navegar_para_desenhos_engenharia(wait)
+
+                for row_num in linhas_a_comparar:
+                    row_cells = sheet[row_num]
+                    pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
+                    rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
+                    
+                    self.update_status(f"Comparando PN: {pn_extraido} (linha {row_num})...")
+
+                    if pn_extraido and pn_extraido != "Não encontrado":
+                        rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+                        
+                        status = "FALHA NA BUSCA"
+                        if rev_engenharia and rev_fse and rev_engenharia != "Não encontrada":
+                            if rev_engenharia.strip().upper() == rev_fse.strip().upper():
+                                status = "OK"
+                            else:
+                                status = "DIVERGENTE"
+                        
+                        sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
+                        sheet.cell(row=row_num, column=col_indices["Status Comparação"], value=status)
+                    else:
+                        sheet.cell(row=row_num, column=col_indices["Status Comparação"], value="PN NÃO ENCONTRADO NA FSE")
+
+                    workbook.save(self.excel_path)
 
             self.update_status("Processo de teste concluído com sucesso!", "#008A00")
 
@@ -194,23 +247,20 @@ class ValidadorGUI:
             self.update_status(f"Erro Crítico: {e}", "red")
         finally:
             if self.driver:
+                self.registrar_log("Automação finalizada.")
                 self.driver.quit()
+                self.driver = None
             self.action_button.pack_forget()
 
     def navegar_para_fse_busca(self, wait):
-        self.update_status("Navegando para busca FSE...")
-        if len(self.driver.window_handles) > 1:
-            self.driver.switch_to.window(self.driver.window_handles[1])
-        else: # Se a janela GFS não estiver aberta, abre-a
-            original_window = self.driver.current_window_handle
-            wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
-            wait.until(EC.number_of_windows_to_be(2))
-            for handle in self.driver.window_handles:
-                if handle != original_window: self.driver.switch_to.window(handle)
-        
-        self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
-        # Pequena espera para garantir que a página de busca carregou
-        wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
+        original_window = self.driver.current_window_handle
+        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
+        wait.until(EC.number_of_windows_to_be(2))
+        for handle in self.driver.window_handles:
+            if handle != original_window:
+                self.driver.switch_to.window(handle)
+                break
+        self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe' e, quando a tela de busca carregar, clique em 'Continuar'.")
 
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
         try:
@@ -220,18 +270,8 @@ class ValidadorGUI:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']"))).clear()
             self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderLine']").send_keys(oc2)
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             
-            # --- CORREÇÃO: Bloco de erro específico para OS não encontrada ---
-            try:
-                details_button = WebDriverWait(self.driver, 10).until(
-                    EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))
-                )
-                details_button.click()
-            except TimeoutException:
-                self.registrar_log(f"ERRO: OS {os_num} não foi encontrada após a busca. Pulando.")
-                self.tirar_print_de_erro(os_num, "OS_nao_encontrada")
-                return None
-
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
             dados = {"OS": os_num}
@@ -249,60 +289,109 @@ class ValidadorGUI:
             
             dados["PN extraído"] = pn_match.group(1) if pn_match else "Não encontrado"
             dados["REV. FSE"] = rev_match.group(1) if rev_match else "Não encontrada"
+
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return dados
+
         except Exception as e:
-            self.registrar_log(f"ERRO inesperado ao extrair dados da OS {os_num}: {e}")
+            self.registrar_log(f"ERRO ao extrair dados da OS {os_num}: {e}")
             self.tirar_print_de_erro(os_num, "extracao_FSE")
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return None
     
     def navegar_para_desenhos_engenharia(self, wait):
-        self.update_status("Navegando para Desenhos de Engenharia...")
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.driver.get("https://web.embraer.com.br/irj/portal")
         wait.until(EC.element_to_be_clickable((By.ID, "L2N1"))).click()
-        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-        self.driver.switch_to.default_content() # Volta para o contexto principal para o próximo comando
-
+        self.prompt_user_action("Valide se a tela 'Desenhos Engenharia' está aberta e clique em 'Continuar'.")
+    
     def buscar_revisao_engenharia(self, wait, part_number):
+        """
+        Busca a revisão de engenharia para um Part Number específico,
+        navegando corretamente entre os iframes e retornando à tela de busca.
+        """
+        # Sempre comece retornando ao conteúdo principal para evitar erros de contexto de iframes anteriores.
+        self.registrar_log(f"Iniciando busca pela revisão do PN: {part_number}")
+        self.driver.switch_to.default_content()
+
         try:
-            if not part_number or part_number == "Não encontrado": return "PN não fornecido"
-            
-            self.registrar_log(f"Buscando revisão para PN: {part_number}")
+            if not part_number or part_number == "Não encontrado":
+                self.registrar_log("PN não fornecido ou inválido. Pulando busca.")
+                return "PN não fornecido"
+
+            # 1. Entra no iframe principal da área de conteúdo
+            self.registrar_log("Aguardando e mudando para o iframe principal 'contentAreaFrame'...")
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "ivuFrm_page0ivu0")))
             
-            campo_pn = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+            # 2. Entra no iframe ANINHADO que contém o formulário (o ID pode variar, mas geralmente começa com 'ivuFrm')
+            self.registrar_log("Aguardando e mudando para o iframe aninhado da aplicação...")
+            # Nota: O ID 'ivuFrm_page0ivu0' pode mudar. Se falhar, verifique o HTML da página.
+            # Uma alternativa mais robusta seria buscar por um iframe cujo nome ou src seja mais estável.
+            wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
+            self.registrar_log("Navegação para iframes concluída com sucesso.")
+
+            # 3. Interage com o formulário de busca
+            self.registrar_log(f"Preenchendo o campo com o Part Number: {part_number}")
+            campo_pn = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
             
-            # Localizador mais específico e focado para o botão 'Desenho'
-            button_locator = (By.XPATH, "//*[contains(@title, 'Desenho')] | //span[text()='Desenho'] | //a[text()='Desenho']")
-            search_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(button_locator))
-            self.driver.execute_script("arguments[0].click();", search_button)
+            # 4. Clica no botão de busca (usando o XPath da sua imagem)
+            self.registrar_log("Clicando no botão 'Desenho' para iniciar a consulta...")
+            # O elemento clicável pode ser o <a> ou <span>. O XPath abaixo busca pelo texto.
+            # Usar '..' para subir para o elemento pai clicável é uma boa prática.
+            botao_desenho = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[text()='Desenho']/ancestor::a | //*[text()='Desenho']/ancestor::span")))
+            self.driver.execute_script("arguments[0].click();", botao_desenho) # Clique com JavaScript é mais robusto
 
-            seletor_rev = f"//span[contains(text(), 'Rev ')]"
-            rev_element = WebDriverWait(self.driver, 10).until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
+            # 5. Aguarda o resultado e extrai a revisão
+            self.registrar_log("Aguardando o resultado da busca...")
+            # O resultado aparece na mesma estrutura de iframe.
+            seletor_rev = "//span[contains(text(), 'Rev ')]"
+            rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
-            revisao = rev_element.text.split(" ")[-1]
+            revisao_raw = rev_element.text # Ex: "Rev N"
+            revisao = revisao_raw.split(" ")[-1]
+            self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
+            
+            # 6. Clica no botão "Voltar" para preparar para a próxima busca
+            self.registrar_log("Retornando para a tela de busca...")
+            botao_voltar = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[text()='Voltar']/ancestor::a")))
+            self.driver.execute_script("arguments[0].click();", botao_voltar)
+
+            # 7. Aguarda um elemento da tela de busca reaparecer para confirmar o retorno
+            wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+            self.registrar_log("Retorno à tela de busca confirmado.")
+            
             return revisao
-        except Exception as e:
-            self.registrar_log(f"ERRO ao buscar revisão para PN {part_number}: {e}")
-            self.tirar_print_de_erro(part_number, "busca_revisao")
+
+        except TimeoutException:
+            self.registrar_log(f"ERRO (Timeout): Revisão não encontrada ou página demorou a carregar para o PN {part_number}. Verifique o screenshot.")
+            self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
             return "Não encontrada"
+        except Exception as e:
+            self.registrar_log(f"ERRO GERAL ao buscar revisão de engenharia para PN {part_number}: {e}")
+            self.tirar_print_de_erro(part_number, "busca_revisao_erro")
+            return "Falha na busca"
         finally:
+            # ESSENCIAL: Retorna ao contexto principal da página para a próxima iteração do loop.
+            self.registrar_log("Retornando para o conteúdo principal da página (default_content).")
             self.driver.switch_to.default_content()
 
+
     def safe_find_text(self, by, value):
-        try: return self.driver.find_element(by, value).text
-        except: return ""
+        try:
+            return self.driver.find_element(by, value).text
+        except NoSuchElementException:
+            return ""
 
     def tirar_print_de_erro(self, identificador, etapa):
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         nome_screenshot = f"erro_{etapa}_{identificador}_{timestamp}.png"
+        screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
         try:
             if self.driver:
-                self.driver.save_screenshot(os.path.join(os.getcwd(), nome_screenshot))
-                self.registrar_log(f"Screenshot de erro salvo: '{nome_screenshot}'")
+                self.driver.save_screenshot(screenshot_path)
+                self.registrar_log(f"Screenshot de erro salvo em: '{screenshot_path}'")
         except Exception as e:
             self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {e}")
 
@@ -310,4 +399,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = ValidadorGUI(root)
     root.mainloop()
-
