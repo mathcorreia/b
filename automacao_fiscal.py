@@ -15,15 +15,16 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
-from selenium.webdriver.common.action_chains import ActionChains
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
 INPUT_FILENAME = 'lista.xlsx'
 
-# --- Seletores do Portal SAP (para Ordens de Compra) ---
+# --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
+# --- ALTERAÇÃO AQUI: Adicionado o seletor para o iframe aninhado ---
+IFRAME_ANINHADO = (By.ID, "ivuFrm_page0ivu0")
 
 # Navegação
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
@@ -129,7 +130,6 @@ class DownloaderGUI:
         try:
             self.driver = webdriver.Chrome(service=service, options=options)
             self.registrar_log(f"Navegador configurado. Downloads serão salvos em: {self.download_path}")
-            # --- ALTERAÇÃO AQUI: Aumentando o tempo de espera máximo para 90 segundos ---
             return self.driver, WebDriverWait(self.driver, 90)
         except Exception as e:
             self.registrar_log(f"ERRO ao iniciar o chromedriver: {e}")
@@ -158,14 +158,14 @@ class DownloaderGUI:
                         self.registrar_log(f"Download concluído e renomeado para: {os.path.basename(novo_nome)}")
                         return True
                     except Exception as e:
-                        self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para OC {oc_num} na primeira tentativa: {e}. Tentando novamente.")
+                        self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para OC {oc_num}: {e}. Tentando novamente.")
                         time.sleep(3)
                         try:
                             shutil.move(arquivo_recente, novo_nome)
-                            self.registrar_log(f"Sucesso na segunda tentativa de renomear para: {os.path.basename(novo_nome)}")
+                            self.registrar_log(f"Sucesso na segunda tentativa: {os.path.basename(novo_nome)}")
                             return True
                         except Exception as e2:
-                            self.registrar_log(f"ERRO: Falha ao renomear o arquivo para OC {oc_num} na segunda tentativa: {e2}")
+                            self.registrar_log(f"ERRO: Falha ao renomear para OC {oc_num}: {e2}")
                             return False
             time.sleep(1)
 
@@ -184,7 +184,7 @@ class DownloaderGUI:
             self.prompt_user_action("Por favor, faça o login e a autenticação no portal. Quando a página principal carregar, clique em 'Continuar'.")
             
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
-            self.update_status("Login detectado. Iniciando busca pelas Ordens de Compra...")
+            self.update_status("Login detectado. Buscando Ordens de Compra...")
 
             df_input = pd.read_excel(INPUT_FILENAME, sheet_name='lista', dtype={'Nº Os Cliente': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
@@ -204,31 +204,30 @@ class DownloaderGUI:
 
             self.update_status("Navegando pelo menu do portal...")
             
-            self.registrar_log("Aguardando o menu 'Suprimentos' ficar clicável...")
             menu_suprimentos = wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS))
             menu_suprimentos.click()
             self.registrar_log("Clicou no menu 'Suprimentos'.")
 
-            self.registrar_log("Aguardando 3 segundos para a página recarregar...")
             time.sleep(3)
 
-            self.registrar_log("Aguardando 'Ordens de Compra' ficar clicável...")
             menu_ordens = wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA))
             menu_ordens.click()
             self.registrar_log("Clicou em 'Ordens de Compra'.")
 
-            self.registrar_log("Aguardando 'Todas' ficar clicável...")
             menu_todas = wait.until(EC.element_to_be_clickable(MENU_TODAS))
             menu_todas.click()
             self.registrar_log("Clicou no submenu 'Todas'.")
 
-            self.registrar_log("Aguardando o iframe de conteúdo...")
+            # --- ALTERAÇÃO AQUI: Lógica para entrar nos dois iframes ---
+            self.registrar_log("Aguardando o iframe principal (contentAreaFrame)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
             self.registrar_log("Entrou no iframe principal.")
             
-            # --- ALTERAÇÃO AQUI: Pausa estratégica para os scripts do iframe carregarem ---
-            self.registrar_log("Pausa de 5 segundos para garantir o carregamento do iframe...")
-            time.sleep(5)
+            self.registrar_log("Aguardando o iframe aninhado (ivuFrm_page0ivu0)...")
+            wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
+            self.registrar_log("Entrou no iframe aninhado com sucesso. A busca deve funcionar agora.")
+            
+            time.sleep(3) # Pausa para garantir carregamento do iframe final
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
@@ -237,20 +236,17 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    self.registrar_log("Aguardando campo da OC ficar visível...")
-                    campo_oc = wait.until(EC.visibility_of_element_located(CAMPO_ORDEM_COMPRA))
+                    # --- LÓGICA DE PREENCHIMENTO (Simplificada, pois agora deve funcionar) ---
+                    campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
                     
-                    self.registrar_log(f"Preenchendo OC {oc} e disparando evento 'change' via JavaScript...")
-                    js_script = f"""
-                    arguments[0].focus();
-                    arguments[0].value = '{oc}';
-                    arguments[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
-                    """
-                    driver.execute_script(js_script, campo_oc)
+                    campo_oc.click()
                     time.sleep(1)
 
-                    self.registrar_log("Pressionando Enter para buscar...")
+                    campo_oc.clear()
+                    campo_oc.send_keys(oc)
+                    
                     campo_oc.send_keys(Keys.RETURN)
+                    self.registrar_log(f"Busca realizada para a OC {oc}.")
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
@@ -261,12 +257,17 @@ class DownloaderGUI:
                     self.esperar_download_concluir(oc)
 
                 except TimeoutException:
-                    msg = f"ERRO DE TIMEOUT: O robô não encontrou um elemento necessário (campo de busca ou link do PDF) para a OC {oc} em 90 segundos."
+                    msg = f"ERRO DE TIMEOUT para a OC {oc}. O robô não encontrou o campo de busca ou o link do PDF."
                     self.registrar_log(msg)
                     self.tirar_print_de_erro(oc)
-                    driver.refresh()
-                    self.registrar_log("Página recarregada para tentar a próxima OC.")
+                    # --- LÓGICA PARA RECUPERAÇÃO DE ERRO ---
+                    self.registrar_log("Tentando recarregar e voltar aos iframes para a próxima OC...")
+                    driver.switch_to.default_content() # Sai de todos os iframes
+                    driver.refresh() # Recarrega a página principal
+                    # Re-entra nos iframes para a próxima iteração do loop
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
+                    wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
+                    self.registrar_log("Recuperação concluída.")
                 except Exception as e:
                     self.registrar_log(f"ERRO inesperado ao processar a OC {oc}: {e}")
                     self.tirar_print_de_erro(oc)
@@ -275,11 +276,11 @@ class DownloaderGUI:
             self.registrar_log("Todas as OCs da lista foram processadas.")
 
         except FileNotFoundError:
-            msg = f"ERRO CRÍTICO: Arquivo '{INPUT_FILENAME}' não encontrado. Verifique se ele está na mesma pasta do programa."
+            msg = f"ERRO CRÍTICO: Arquivo '{INPUT_FILENAME}' não encontrado."
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except KeyError:
-            msg = "ERRO CRÍTICO: A coluna 'Nº Os Cliente' não foi encontrada na planilha 'lista' do arquivo 'lista.xlsx'. Por favor, verifique o nome da coluna."
+            msg = "ERRO CRÍTICO: A coluna 'Nº Os Cliente' não foi encontrada na planilha 'lista'."
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except Exception as e:
