@@ -18,7 +18,7 @@ from selenium.common.exceptions import TimeoutException
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
-INPUT_FILENAME = 'lista_ocs.xlsx' # Nome do arquivo Excel de entrada
+INPUT_FILENAME = 'lista.xlsx' # Nome do arquivo Excel de entrada
 # A constante DOWNLOAD_DIR_NAME foi removida
 
 # --- Seletores do Portal SAP (para Ordens de Compra) ---
