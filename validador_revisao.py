@@ -325,75 +325,48 @@ class ValidadorGUI:
         self.registrar_log(f"ERRO: Não foi possível localizar o elemento '{description}' com nenhum dos seletores.")
         return False
 
-    def buscar_revisao_engenharia(self, wait, part_number):
-        """
-        Busca a revisão de engenharia para um Part Number específico.
-        VERSÃO 3: Utiliza múltiplas tentativas de seletores para máxima robustez.
-        """
-        self.registrar_log(f"Iniciando busca v3 (robusta) pela revisão do PN: {part_number}")
+    #
+# COLOQUE ESTA VERSÃO DE DEBUG TEMPORARIAMENTE NO LUGAR DA SUA buscar_revisao_engenharia
+#
+def buscar_revisao_engenharia(self, wait, part_number):
+    """
+    VERSÃO DE DEBUG: Pausa o script para permitir a inspeção do botão 'Desenho'.
+    """
+    self.registrar_log(f"--- MODO DEBUG ATIVADO para o PN: {part_number} ---")
+    self.driver.switch_to.default_content()
+
+    try:
+        if not part_number or part_number == "Não encontrado":
+            return "PN não fornecido"
+
+        # Navega até o formulário
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
+
+        # Preenche o campo
+        campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+        campo_pn.clear()
+        campo_pn.send_keys(part_number)
+        self.registrar_log(f"Campo preenchido com: {part_number}")
+        
+        # PAUSA O SCRIPT AQUI!
+        self.registrar_log("!!! SCRIPT PAUSADO !!!")
+        self.registrar_log(">>> POR FAVOR, SIGA AS INSTRUÇÕES PARA INSPECIONAR O BOTÃO 'DESENHO' NO NAVEGADOR. <<<")
+        self.registrar_log(">>> APÓS COPIAR O HTML, VOLTE AQUI NO TERMINAL E PRESSIONE 'ENTER' PARA CONTINUAR. <<<")
+        
+        # Esta linha vai pausar a execução até você apertar Enter no terminal
+        input() 
+
+        # Apenas para o script não quebrar depois da pausa
+        self.registrar_log("Continuando execução após a pausa...")
+        return "DEBUG_CONCLUIDO"
+
+    except Exception as e:
+        self.registrar_log(f"ERRO DURANTE O MODO DEBUG: {traceback.format_exc()}")
+        input("Pressione Enter para fechar.")
+        return "ERRO_DEBUG"
+    finally:
         self.driver.switch_to.default_content()
-
-        try:
-            if not part_number or part_number == "Não encontrado":
-                return "PN não fornecido"
-
-            # 1. Navega para a estrutura de iframes
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
-
-            # 2. Preenche o campo de busca
-            campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
-            campo_pn.clear()
-            campo_pn.send_keys(part_number)
-            self.registrar_log(f"Campo preenchido com: {part_number}")
-            time.sleep(0.5)
-
-            # 3. Usa o método robusto para encontrar e clicar no botão "Desenho"
-            seletores_desenho = [
-                "//a[contains(., 'Desenho')]",                     # Se for um link <a> com o texto
-                "//span[text()='Desenho']/ancestor::a",           # Se o texto estiver num <span> dentro de um <a>
-                "//a[@title='Desenho']",                          # Se o texto estiver no atributo 'title' do link
-                "//span[contains(text(), 'Desenho')]/parent::*"   # Se o texto estiver num <span>, clica no elemento pai
-            ]
-            
-            if not self.find_and_click_robust(wait, seletores_desenho, "Botão Desenho"):
-                raise TimeoutException("Falha ao clicar no botão 'Desenho' após múltiplas tentativas.")
-
-            # 4. Aguarda e extrai a revisão
-            self.registrar_log("Aguardando o resultado da busca...")
-            seletor_rev = "//span[contains(text(), 'Rev ')]"
-            rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
-            
-            revisao_raw = rev_element.text
-            revisao = revisao_raw.split(" ")[-1]
-            self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
-            
-            # 5. Usa o método robusto para clicar em "Voltar"
-            seletores_voltar = [
-                "//a[contains(., 'Voltar')]",
-                "//span[text()='Voltar']/ancestor::a",
-                "//a[@title='Voltar']"
-            ]
-            if not self.find_and_click_robust(wait, seletores_voltar, "Botão Voltar"):
-                raise TimeoutException("Falha ao clicar no botão 'Voltar' para retornar.")
-
-            # 6. Confirma o retorno à tela de busca
-            wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
-            self.registrar_log("Retorno à tela de busca confirmado.")
-            
-            return revisao
-
-        except TimeoutException as e_timeout:
-            self.registrar_log(f"ERRO (Timeout) no PN {part_number}: {e_timeout}")
-            self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
-            return "Não encontrada"
-        except Exception as e:
-            self.registrar_log(f"ERRO GERAL no PN {part_number}: {traceback.format_exc()}")
-            self.tirar_print_de_erro(part_number, "busca_revisao_erro")
-            return "Falha na busca"
-        finally:
-            self.registrar_log("Retornando para o conteúdo principal da página (default_content).")
-            self.driver.switch_to.default_content()
 
 
 
