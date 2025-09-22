@@ -200,7 +200,6 @@ class DownloaderGUI:
 
             self.registrar_log(f"Encontradas {total_a_processar} novas OCs para baixar.")
 
-            # --- Bloco de Navegação Estabilizado ---
             self.update_status("Navegando pelo menu do portal...")
             
             self.registrar_log("Aguardando o menu 'Suprimentos' ficar clicável...")
@@ -208,7 +207,6 @@ class DownloaderGUI:
             menu_suprimentos.click()
             self.registrar_log("Clicou no menu 'Suprimentos'.")
 
-            # Espera forçada para a página recarregar e se estabilizar
             self.registrar_log("Aguardando 3 segundos para a página recarregar...")
             time.sleep(3)
 
@@ -221,7 +219,6 @@ class DownloaderGUI:
             menu_todas = wait.until(EC.element_to_be_clickable(MENU_TODAS))
             menu_todas.click()
             self.registrar_log("Clicou no submenu 'Todas'.")
-            # --- Fim do Bloco de Navegação ---
 
             self.registrar_log("Aguardando o iframe de conteúdo...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
@@ -234,11 +231,22 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
+                    # --- LÓGICA DE PREENCHIMENTO REVISADA ---
+                    # 1. Encontra o campo de busca da OC
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
+                    
+                    # 2. Interação mais robusta: Clica, espera um instante, e só então digita.
+                    self.registrar_log(f"Clicando no campo de OC para garantir o foco...")
+                    campo_oc.click()
+                    time.sleep(1) # Pausa de 1 segundo para estabilizar o campo
+
+                    self.registrar_log(f"Limpando o campo e digitando a OC: {oc}")
                     campo_oc.clear()
                     campo_oc.send_keys(oc)
+                    
+                    self.registrar_log("Pressionando Enter para buscar...")
                     campo_oc.send_keys(Keys.RETURN)
-                    self.registrar_log(f"Busca realizada para a OC {oc}.")
+                    # --- FIM DA LÓGICA REVISADA ---
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
