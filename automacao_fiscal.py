@@ -203,20 +203,14 @@ class DownloaderGUI:
 
             self.update_status("Navegando pelo menu do portal...")
             
-            menu_suprimentos = wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS))
-            menu_suprimentos.click()
+            wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
             self.registrar_log("Clicou no menu 'Suprimentos'.")
-
             time.sleep(3)
-
-            menu_ordens = wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA))
-            menu_ordens.click()
+            wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
             self.registrar_log("Clicou em 'Ordens de Compra'.")
-
-            menu_todas = wait.until(EC.element_to_be_clickable(MENU_TODAS))
-            menu_todas.click()
+            wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
             self.registrar_log("Clicou no submenu 'Todas'.")
-
+            
             self.registrar_log("Aguardando o iframe principal (contentAreaFrame)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
             self.registrar_log("Entrou no iframe principal.")
@@ -224,7 +218,6 @@ class DownloaderGUI:
             self.registrar_log("Aguardando o iframe aninhado (ivuFrm_page0ivu0)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
             self.registrar_log("Entrou no iframe aninhado com sucesso.")
-            
             time.sleep(3)
 
             processadas_count = 0
@@ -235,33 +228,52 @@ class DownloaderGUI:
                 
                 try:
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
-                    
                     campo_oc.click()
                     time.sleep(1)
-
                     campo_oc.clear()
                     campo_oc.send_keys(oc)
-                    
                     campo_oc.send_keys(Keys.RETURN)
                     self.registrar_log(f"Busca realizada para a OC {oc}.")
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
                     
+                    # --- ALTERAÇÃO AQUI: LÓGICA PARA GERENCIAR ABAS ---
+                    aba_principal = driver.current_window_handle
                     link_pdf.click()
                     self.registrar_log(f"Clique no link para baixar o PDF da OC {oc}.")
                     
+                    # Espera a nova aba abrir
+                    wait.until(EC.number_of_windows_to_be(2))
+                    
+                    # Muda para a nova aba
+                    for handle in driver.window_handles:
+                        if handle != aba_principal:
+                            driver.switch_to.window(handle)
+                            self.registrar_log("Foco mudou para a aba do PDF.")
+                            break
+                    
+                    # Espera o download e fecha a aba do PDF
                     self.esperar_download_concluir(oc)
+                    self.registrar_log("Fechando a aba do PDF...")
+                    driver.close()
                     
-                    # --- ALTERAÇÃO AQUI: LÓGICA PARA RESETAR A PÁGINA PARA O PRÓXIMO LOOP ---
-                    self.registrar_log("Resetando a página para a próxima OC...")
+                    # Volta para a aba principal
+                    driver.switch_to.window(aba_principal)
+                    self.registrar_log("Foco retornou para a aba principal.")
+                    # --- FIM DA ALTERAÇÃO ---
+                    
+                    # --- ALTERAÇÃO AQUI: LÓGICA DE "RESET SUAVE" ---
+                    self.registrar_log("Resetando a tela para a próxima OC...")
                     driver.switch_to.default_content() # 1. Sai de todos os iframes
-                    driver.refresh() # 2. Recarrega a página principal
                     
-                    # 3. Re-entra nos iframes para a próxima iteração
+                    wait.until(EC.element_to_be_clickable(MENU_TODAS)).click() # 2. Clica em "Todas" para recarregar
+                    self.registrar_log("Clicou em 'Todas' para resetar.")
+
+                    # 3. Re-entra nos iframes
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-                    self.registrar_log("Página resetada com sucesso.")
+                    self.registrar_log("Página resetada com sucesso para a próxima iteração.")
                     # --- FIM DA ALTERAÇÃO ---
 
                 except Exception as e:
@@ -272,16 +284,15 @@ class DownloaderGUI:
                     self.registrar_log("Tentando recarregar a página para recuperar do erro...")
                     driver.switch_to.default_content()
                     driver.refresh()
-                    self.registrar_log("Página recarregada. Re-navegando para a tela de busca...")
-                    # Re-navega para poder continuar com a próxima OC
+                    self.registrar_log("Página recarregada. Re-navegando...")
                     wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
                     time.sleep(3)
                     wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
                     wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-                    self.registrar_log("Recuperação do erro concluída. Continuando com a próxima OC.")
-                    continue # Pula para a próxima OC da lista
+                    self.registrar_log("Recuperação concluída. Continuando com a próxima OC.")
+                    continue
 
             self.update_status("Processo concluído! Verifique os arquivos na pasta.", "#008A00")
             self.registrar_log("Todas as OCs da lista foram processadas.")
