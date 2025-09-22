@@ -326,19 +326,14 @@ class ValidadorGUI:
             campo_pn.clear()
             campo_pn.send_keys(part_number)
             
-            # --- NOVA LÓGICA DE CLIQUE ---
-            self.registrar_log("Voltando para o iframe pai para encontrar o botão de busca...")
-            self.driver.switch_to.parent_frame()
-
             self.registrar_log("Clicando no botão de busca ('Desenho' ou 'Consultar')...")
+            # --- LÓGICA DE CLIQUE SIMPLIFICADA E ROBUSTA ---
+            # Assume que o botão está no mesmo iframe que o campo de texto
             search_button_locator = (By.XPATH, "//span[contains(text(), 'Consultar')] | //a[contains(text(), 'Consultar')] | //span[contains(text(), 'Desenho')] | //a[contains(text(), 'Desenho')]")
             search_button = WebDriverWait(self.driver, 10).until(EC.element_to_be_clickable(search_button_locator))
             self.driver.execute_script("arguments[0].click();", search_button)
 
-            # Re-entrar no iframe interno para ler os resultados
-            self.registrar_log("Re-entrando no iframe aninhado para ler os resultados...")
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "ivuFrm_page0ivu0")))
-
+            self.registrar_log("Botão clicado. Aguardando resultados...")
             seletor_rev = f"//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
