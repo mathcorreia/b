@@ -15,6 +15,7 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
+from selenium.webdriver.common.action_chains import ActionChains
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
@@ -28,6 +29,9 @@ IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
 MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
+
+# --- ALTERAÇÃO AQUI: Novo seletor para o botão 'Pesquisar' ---
+BOTAO_PESQUISAR = (By.XPATH, "//button[contains(@title, 'Pesquisar')]")
 
 # Ações na página de busca
 CAMPO_ORDEM_COMPRA = (By.ID, "GOCI.Wzsulmm100View.txtPO")
@@ -231,11 +235,16 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    # --- LÓGICA DE PREENCHIMENTO AVANÇADA COM JAVASCRIPT ---
+                    # --- LÓGICA DE BUSCA CORRIGIDA ---
+                    # 1. Clica no botão "Pesquisar" para revelar os campos de filtro
+                    self.registrar_log("Aguardando o botão 'Pesquisar' ficar clicável...")
+                    wait.until(EC.element_to_be_clickable(BOTAO_PESQUISAR)).click()
+                    self.registrar_log("Clicou em 'Pesquisar'.")
+
+                    # 2. Aguarda o campo da OC aparecer e o preenche
                     self.registrar_log("Aguardando campo da OC ficar visível...")
                     campo_oc = wait.until(EC.visibility_of_element_located(CAMPO_ORDEM_COMPRA))
                     
-                    # Usa JavaScript para focar, definir o valor e disparar o evento 'change'
                     self.registrar_log(f"Preenchendo OC {oc} e disparando evento 'change' via JavaScript...")
                     js_script = f"""
                     arguments[0].focus();
@@ -243,13 +252,11 @@ class DownloaderGUI:
                     arguments[0].dispatchEvent(new Event('change', {{ bubbles: true }}));
                     """
                     driver.execute_script(js_script, campo_oc)
-                    
-                    time.sleep(1) # Pausa para o script da página reagir ao evento
+                    time.sleep(1)
 
-                    # Envia a tecla ENTER para acionar a busca
                     self.registrar_log("Pressionando Enter para buscar...")
                     campo_oc.send_keys(Keys.RETURN)
-                    # --- FIM DA LÓGICA AVANÇADA ---
+                    # --- FIM DA LÓGICA CORRIGIDA ---
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
@@ -263,7 +270,8 @@ class DownloaderGUI:
                     msg = f"ERRO: Não foi possível encontrar o resultado para a OC {oc} após a busca. Verifique se a OC é válida ou se a página demorou muito para carregar."
                     self.registrar_log(msg)
                     self.tirar_print_de_erro(oc)
-                    driver.switch_to.default_content()
+                    # Recarrega a página para tentar a próxima OC em um estado limpo
+                    driver.refresh()
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                 except Exception as e:
                     self.registrar_log(f"ERRO inesperado ao processar a OC {oc}: {e}")
