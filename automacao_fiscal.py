@@ -18,8 +18,7 @@ from selenium.common.exceptions import TimeoutException
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
-INPUT_FILENAME = 'lista.xlsx' # Nome do arquivo Excel de entrada
-# A constante DOWNLOAD_DIR_NAME foi removida
+INPUT_FILENAME = 'lista.xlsx'
 
 # --- Seletores do Portal SAP (para Ordens de Compra) ---
 PORTAL_URL = "https://web.embraer.com.br"
@@ -62,7 +61,6 @@ class DownloaderGUI:
         self.log_text.pack(expand=True, fill='both', pady=5)
         
         self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
-        # --- ALTERAÇÃO AQUI: Define o caminho de download para o diretório atual ---
         self.download_path = os.getcwd()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -118,7 +116,7 @@ class DownloaderGUI:
         
         options = webdriver.ChromeOptions()
         prefs = {
-            "download.default_directory": self.download_path, # Usará o caminho do diretório atual
+            "download.default_directory": self.download_path,
             "download.prompt_for_download": False,
             "plugins.always_open_pdf_externally": True,
             "safebrowsing.enabled": True
@@ -185,11 +183,16 @@ class DownloaderGUI:
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
             self.update_status("Login detectado. Iniciando busca pelas Ordens de Compra...")
 
-            df_input = pd.read_excel(INPUT_FILENAME, dtype={'OC': str})
+            # <-- ALTERAÇÃO AQUI: Lendo a planilha 'lista' e a coluna 'Nº Os Cliente'
+            df_input = pd.read_excel(INPUT_FILENAME, sheet_name='lista', dtype={'Nº Os Cliente': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
 
+            # <-- ALTERAÇÃO AQUI: Processando a coluna 'Nº Os Cliente' para extrair o número principal
+            df_input['OC_BASE'] = df_input['Nº Os Cliente'].str.split('/', expand=True)[0]
+
+            # Filtrando OCs já baixadas usando a nova coluna 'OC_BASE'
             ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
-            df_a_processar = df_input[~df_input['OC'].isin(ocs_ja_baixadas)].copy()
+            df_a_processar = df_input[~df_input['OC_BASE'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
 
             if total_a_processar == 0:
@@ -212,7 +215,8 @@ class DownloaderGUI:
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
-                oc = str(row['OC']).strip()
+                # Usando a coluna 'OC_BASE' para a busca
+                oc = str(row['OC_BASE']).strip()
                 processadas_count += 1
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
@@ -246,6 +250,11 @@ class DownloaderGUI:
 
         except FileNotFoundError:
             msg = f"ERRO CRÍTICO: Arquivo '{INPUT_FILENAME}' não encontrado. Verifique se ele está na mesma pasta do programa."
+            self.update_status(msg, "red")
+            self.registrar_log(msg)
+        except KeyError:
+            # <-- ALTERAÇÃO AQUI: Mensagem de erro específica se a coluna 'Nº Os Cliente' não for encontrada
+            msg = "ERRO CRÍTICO: A coluna 'Nº Os Cliente' não foi encontrada na planilha 'lista' do arquivo 'lista.xlsx'. Por favor, verifique o nome da coluna."
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except Exception as e:
