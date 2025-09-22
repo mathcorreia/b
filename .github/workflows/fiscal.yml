@@ -1,4 +1,4 @@
-name: Build Automação Fiscal EXE with PyInstaller
+name: Build Validador EXE with PyInstaller
 
 on:
   workflow_dispatch:
@@ -8,7 +8,6 @@ on:
 
 jobs:
   build:
-    
     runs-on: windows-latest
 
     steps:
@@ -33,16 +32,21 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: Build Automação Fiscal EXE
+      - name: List files in the repository root
+        run: dir
+
+      - name: Build Fiscal EXE
         run: |
           pyinstaller --noconsole `
-            --name AutomacaoFiscal `
+            --name ValidadorRevisao `
             --onefile `
-            --add-binary "chromedriver.exe;." `
+            --hidden-import=pandas._libs.tslibs.np_datetime `
+            --hidden-import=pandas._libs.tslibs.nattype `
             automacao_fiscal.py
-      
-      - name: Upload Automação Fiscal EXE
+
+      - name: Upload Validador EXE
         uses: actions/upload-artifact@v4
         with:
-          name: AutomacaoFiscal
-          path: dist/AutomacaoFiscal.exe
+          name: ValidadorRevisao
+          path: dist/automacao_fiscal.exe
+
