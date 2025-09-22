@@ -16,6 +16,8 @@ from selenium.webdriver.chrome.service import Service as ChromeService
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
+# IMPORT ADICIONADO PARA SIMULAR CLIQUES HUMANOS
+from selenium.webdriver.common.action_chains import ActionChains
 
 # --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
@@ -93,7 +95,6 @@ class ValidadorGUI:
         self.user_action_event.set()
 
     def setup_excel(self):
-        """Cria o ficheiro Excel com o cabeçalho se ele não existir."""
         if not os.path.exists(self.excel_path):
             workbook = openpyxl.Workbook()
             sheet = workbook.active
@@ -109,7 +110,6 @@ class ValidadorGUI:
             workbook.save(self.excel_path)
             self.registrar_log(f"Arquivo Excel '{EXCEL_FILENAME}' criado com sucesso.")
         else:
-            # Se o ficheiro existe, apenas carrega os cabeçalhos para uso posterior
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             self.headers = [cell.value for cell in sheet[1]]
@@ -120,19 +120,16 @@ class ValidadorGUI:
             self.update_status("Iniciando configuração...")
             self.setup_excel()
 
-            # --- LEITURA DO EXCEL DE ENTRADA ---
             self.update_status("Lendo arquivo Excel 'lista.xlsx'...")
             df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-            df_input['OS'] = df_input['OS'].astype(str) # Garante que OS é string para comparação
+            df_input['OS'] = df_input['OS'].astype(str)
             self.registrar_log(f"Arquivo 'lista.xlsx' lido com {len(df_input)} itens.")
 
-            # --- Limita o DataFrame para teste ---
             df_input = df_input.head(10)
             self.registrar_log(f"MODO DE TESTE: Execução limitada às primeiras 10 OCs da lista.")
 
-            # --- LER OS JÁ VERIFICADAS E FILTRAR A LISTA ---
             self.update_status("Verificando OCs já processadas...")
             os_ja_verificadas = set()
             try:
@@ -140,8 +137,8 @@ class ValidadorGUI:
                 if 'OS' in df_existente.columns:
                     os_ja_verificadas = set(df_existente['OS'].astype(str))
                 self.registrar_log(f"Encontradas {len(os_ja_verificadas)} OSs no arquivo de resultados.")
-            except Exception as e:
-                self.registrar_log(f"Aviso: Não foi possível ler o arquivo Excel existente. Verificando todas as OSs. Erro: {e}")
+            except Exception:
+                self.registrar_log("Aviso: Não foi possível ler o arquivo Excel existente. Verificando todas as OSs.")
 
             df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
             novas_os_count = len(df_a_processar)
@@ -152,19 +149,23 @@ class ValidadorGUI:
             else:
                 self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OSs.")
                 
-                # --- CONFIGURAÇÃO DO NAVEGADOR (só se necessário) ---
                 self.update_status("Configurando o navegador...")
                 caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
                 service = ChromeService(executable_path=caminho_chromedriver)
                 options = webdriver.ChromeOptions()
                 options.add_argument("--start-maximized")
+
+                # ## PLANO B: Se a Solução com ActionChains não funcionar, DESCOMENTE as 3 linhas abaixo ##
+                # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                # options.add_experimental_option('useAutomationExtension', False)
+                # options.add_argument("--disable-blink-features=AutomationControlled")
+                
                 self.driver = webdriver.Chrome(service=service, options=options)
                 wait = WebDriverWait(self.driver, 15)
 
                 self.driver.get("https://web.embraer.com.br/irj/portal")
                 self.prompt_user_action("Faça o login no portal e, quando a página principal carregar, clique em 'Continuar'.")
 
-                # --- ETAPA 1: EXTRAÇÃO E SALVAMENTO INICIAL (APENAS PARA NOVAS OSs) ---
                 self.update_status(f"ETAPA 1: Extraindo dados de {novas_os_count} novas OSs...")
                 self.navegar_para_fse_busca(wait)
                 
@@ -181,32 +182,35 @@ class ValidadorGUI:
                         workbook.save(self.excel_path)
                 self.registrar_log("Etapa 1 (Extração de novas OSs) concluída.")
 
-            # --- ETAPA 2: ATUALIZAÇÃO COM COMPARAÇÃO (PARA ITENS PENDENTES) ---
             self.update_status("ETAPA 2: Verificando comparações pendentes...")
             
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             col_indices = {name: i+1 for i, name in enumerate(self.headers)}
             
-            # Identifica as linhas que precisam de comparação
             linhas_a_comparar = []
             for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                # Verifica se a OS da linha está na lista de teste antes de adicionar
                 os_da_linha = str(row_cells[col_indices["OS"] - 1].value)
                 if os_da_linha in df_input['OS'].values:
                     status_cell = row_cells[col_indices["Status Comparação"] - 1]
-                    if not status_cell.value: # Se a célula de status está vazia
-                        linhas_a_comparar.append(i + 2) # Guarda o número da linha
+                    if not status_cell.value:
+                        linhas_a_comparar.append(i + 2)
 
             if not linhas_a_comparar:
                 self.update_status("Nenhuma comparação pendente na amostra de teste. Processo finalizado!", "#008A00")
             else:
-                if not self.driver: # Inicia o driver se ainda não foi iniciado
+                if not self.driver:
                     self.update_status("Configurando o navegador para a Etapa 2...")
                     caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
                     service = ChromeService(executable_path=caminho_chromedriver)
                     options = webdriver.ChromeOptions()
                     options.add_argument("--start-maximized")
+                    
+                    # ## PLANO B: Se a Solução com ActionChains não funcionar, DESCOMENTE as 3 linhas abaixo ##
+                    # options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                    # options.add_experimental_option('useAutomationExtension', False)
+                    # options.add_argument("--disable-blink-features=AutomationControlled")
+
                     self.driver = webdriver.Chrome(service=service, options=options)
                     wait = WebDriverWait(self.driver, 15)
                     self.driver.get("https://web.embraer.com.br/irj/portal")
@@ -226,7 +230,7 @@ class ValidadorGUI:
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
                         
                         status = "FALHA NA BUSCA"
-                        if rev_engenharia and rev_fse and rev_engenharia != "Não encontrada":
+                        if rev_engenharia and rev_fse and "Não encontrada" not in [rev_engenharia, rev_fse]:
                             if rev_engenharia.strip().upper() == rev_fse.strip().upper():
                                 status = "OK"
                             else:
@@ -307,82 +311,63 @@ class ValidadorGUI:
     
     def find_and_click(self, wait, selectors, description):
         """
-        Tenta localizar um elemento usando uma lista de seletores XPath.
-        Clica no primeiro que encontrar e retorna True.
-        Se nenhum for encontrado, retorna False.
+        Tenta localizar um elemento e clica nele de forma mais "humana" usando ActionChains
+        para evitar bloqueios de segurança.
         """
         for i, selector in enumerate(selectors):
             try:
                 self.registrar_log(f"Tentativa {i+1} para '{description}' com seletor: {selector}")
                 element = wait.until(EC.presence_of_element_located((By.XPATH, selector)))
                 self.registrar_log(f"SUCESSO: Elemento '{description}' encontrado.")
-                self.driver.execute_script("arguments[0].click();", element)
+                
+                self.registrar_log("Executando clique simulado (ActionChains)...")
+                ActionChains(self.driver).move_to_element(element).click().perform()
+                
                 return True
             except TimeoutException:
                 self.registrar_log(f"Tentativa {i+1} falhou.")
-                continue # Tenta o próximo seletor
+                continue
         
         self.registrar_log(f"ERRO: Não foi possível localizar o elemento '{description}' com nenhum dos seletores.")
         return False
 
     def buscar_revisao_engenharia(self, wait, part_number):
         """
-        VERSÃO 5 (FINAL): Utiliza os XPaths exatos fornecidos pelo usuário via inspeção de elemento.
+        VERSÃO FINAL: Utiliza XPaths exatos e clique simulado com ActionChains.
         """
-        self.registrar_log(f"Iniciando busca v5 (Final com XPath Exato) para o PN: {part_number}")
+        self.registrar_log(f"Iniciando busca Final para o PN: {part_number}")
         self.driver.switch_to.default_content()
 
         try:
             if not part_number or part_number == "Não encontrado":
                 return "PN não fornecido"
 
-            # 1. Navega para a estrutura de iframes
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
 
-            # 2. Preenche o campo de busca
             campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
             self.registrar_log(f"Campo preenchido com: {part_number}")
             time.sleep(0.5)
 
-            # 3. Usa o método robusto com o SELETOR EXATO para o botão "Desenho"
-            #    Nota: O seletor aponta para o elemento pai do <span>, que é o correto para o clique.
-            seletores_desenho = [
-                '//*[@id="FOAH.Dplpl049View.cmdGBI"]'  # <-- SELETOR EXATO E DEFINITIVO FORNECIDO!
-            ]
-            
-            # Usei o nome da sua função 'find_and_click'
+            seletores_desenho = ['//*[@id="FOAH.Dplpl049View.cmdGBI"]']
             if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
                 raise TimeoutException("Falha ao clicar no botão 'Desenho' com o seletor exato.")
 
-            # 4. Aguarda e extrai a revisão usando o SELETOR EXATO para os dados
             self.registrar_log("Aguardando o resultado da busca (árvore de arquivos)...")
-            
-            # SELETOR EXATO para o dado da revisão
             seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
-            revisao_raw = rev_element.text # Ex: "Rev N"
-            revisao = revisao_raw.split(" ")[-1] # Pega a última parte do texto, que é a revisão
+            revisao_raw = rev_element.text
+            revisao = revisao_raw.split(" ")[-1]
             self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
             
-            # 5. Clica em "Voltar" para preparar a próxima busca
-            #    Mantemos o método robusto para o "Voltar", pois não temos seu ID exato.
-            seletores_voltar = [
-                "//a[contains(., 'Voltar')]",
-                "//span[text()='Voltar']/ancestor::a",
-                "//a[@title='Voltar']"
-            ]
+            self.registrar_log("Retornando para a tela de busca...")
+            seletores_voltar = ['//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]']
             if not self.find_and_click(wait, seletores_voltar, "Botão Voltar"):
-                # Se não encontrar o botão 'Voltar', uma alternativa é clicar no link de navegação
-                # para recarregar a tela de busca do zero.
-                self.registrar_log("Botão 'Voltar' não encontrado, tentando recarregar a página de busca...")
-                self.navegar_para_desenhos_engenharia(wait)
+                raise TimeoutException("Falha ao clicar no botão 'Voltar' com o seletor exato.")
 
-
-            # 6. Confirma o retorno à tela de busca
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             self.registrar_log("Retorno à tela de busca confirmado.")
             
@@ -399,7 +384,6 @@ class ValidadorGUI:
         finally:
             self.registrar_log("Retornando para o conteúdo principal da página (default_content).")
             self.driver.switch_to.default_content()
-
 
     def safe_find_text(self, by, value):
         try:
