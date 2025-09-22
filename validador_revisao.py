@@ -99,9 +99,9 @@ class ValidadorGUI:
             workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Dados FSE"
-            # <-- MUDANÇA 1: ATUALIZAÇÃO DOS CABEÇALHOS -->
+            # <-- MUDANÇA 1: CABEÇALHOS ATUALIZADOS -->
             self.headers = [
-                "OS", "OC / Item", "CODEM / DT. REV. ROT.", "PN / REV. PN / LID", 
+                "OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN", "LID",
                 "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
                 "REV. Engenharia", "Status", "Comparação"
             ]
@@ -178,7 +178,9 @@ class ValidadorGUI:
                         dados_fse["Comparação"] = ""
                         workbook = openpyxl.load_workbook(self.excel_path)
                         sheet = workbook.active
-                        sheet.append(list(dados_fse.values()))
+                        # A ordem do dicionário deve corresponder exatamente à ordem dos headers
+                        linha_para_adicionar = [dados_fse.get(h, "") for h in self.headers]
+                        sheet.append(linha_para_adicionar)
                         workbook.save(self.excel_path)
                 self.registrar_log("Etapa 1 concluída.")
 
@@ -192,6 +194,7 @@ class ValidadorGUI:
             for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
                 os_da_linha = str(row_cells[col_indices["OS"] - 1].value)
                 if os_da_linha in df_input['OS'].values:
+                    # Verifica a nova coluna "Status"
                     status_cell = row_cells[col_indices["Status"] - 1]
                     if not status_cell.value:
                         linhas_a_comparar.append(i + 2)
@@ -227,7 +230,6 @@ class ValidadorGUI:
                     if pn_extraido and pn_extraido != "Não encontrado":
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
                         
-                        # <-- MUDANÇA 2: LÓGICA DE COMPARAÇÃO ATUALIZADA -->
                         status = "FALHA NA BUSCA"
                         comparacao_texto = f"FSE: {rev_fse} vs ENG: {rev_engenharia}"
 
@@ -278,18 +280,41 @@ class ValidadorGUI:
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
+            
+            # <-- MUDANÇA 2: EXTRAÇÃO E DIVISÃO DOS DADOS -->
             dados = {"OS": os_num}
-            dados["OC / Item"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', ' ')
-            dados["CODEM / DT. REV. ROT."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').replace('\n', ' | ')
-            dados["PN / REV. PN / LID"] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').replace('\n', ' | ')
+            
+            # OC / Item
+            oc_item_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', ' ')
+            oc_item_split = [x.strip() for x in oc_item_raw.split('/')]
+            dados["OC"] = oc_item_split[0] if len(oc_item_split) > 0 else ""
+            dados["Item"] = oc_item_split[1] if len(oc_item_split) > 1 else ""
+
+            # CODEM / DT. REV. ROT.
+            codem_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').replace('\n', ' / ')
+            codem_split = [x.strip() for x in codem_raw.split('/')]
+            dados["CODEM"] = codem_split[0] if len(codem_split) > 0 else ""
+            dados["DT. REV. ROT."] = codem_split[1] if len(codem_split) > 1 else ""
+
+            # PN / REV. PN / LID
+            pn_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').replace('\n', ' / ')
+            pn_split = [x.strip() for x in pn_raw.split('/')]
+            dados["PN"] = pn_split[0] if len(pn_split) > 0 else ""
+            dados["REV. PN"] = pn_split[1] if len(pn_split) > 1 else ""
+            dados["LID"] = pn_split[2] if len(pn_split) > 2 else ""
+
+            # Campos restantes
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
-            pn_rev_raw = dados["PN / REV. PN / LID"]
-            pn_match = re.search(r'(\d+-\d+-\d+)', pn_rev_raw)
-            rev_match = re.search(r'\s+([A-Z])\s+', pn_rev_raw)
+            
+            # Lógica para extrair PN e REV continua a mesma, baseada nos campos já coletados
+            pn_rev_lid_completo = f'{dados["PN"]} / {dados["REV. PN"]} / {dados["LID"]}'
+            pn_match = re.search(r'(\d+-\d+-\d+)', pn_rev_lid_completo)
+            rev_match = re.search(r'\s+([A-Z])\s+', pn_rev_lid_completo)
             dados["PN extraído"] = pn_match.group(1) if pn_match else "Não encontrado"
             dados["REV. FSE"] = rev_match.group(1) if rev_match else "Não encontrada"
+
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return dados
         except Exception as e:
