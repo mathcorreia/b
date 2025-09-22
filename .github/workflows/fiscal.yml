@@ -38,7 +38,6 @@ jobs:
           pyinstaller --noconsole `
             --name automacao_fiscal `
             --onefile `
-            --add-binary "chromedriver.exe;." `
             automacao_fiscal.py
 
       - name: Upload Fiscal EXE
