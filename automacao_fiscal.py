@@ -26,7 +26,6 @@ IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 
 # Navegação
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
-# <-- ALTERAÇÃO AQUI: Novo seletor adicionado
 MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
 
@@ -201,16 +200,28 @@ class DownloaderGUI:
 
             self.registrar_log(f"Encontradas {total_a_processar} novas OCs para baixar.")
 
+            # --- Bloco de Navegação Estabilizado ---
             self.update_status("Navegando pelo menu do portal...")
-            wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
-            self.registrar_log("Clicou no menu 'Suprimentos'.")
             
-            # <-- ALTERAÇÃO AQUI: Adicionado o clique em 'Ordens de Compra'
-            wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
+            self.registrar_log("Aguardando o menu 'Suprimentos' ficar clicável...")
+            menu_suprimentos = wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS))
+            menu_suprimentos.click()
+            self.registrar_log("Clicou no menu 'Suprimentos'.")
+
+            # Espera forçada para a página recarregar e se estabilizar
+            self.registrar_log("Aguardando 3 segundos para a página recarregar...")
+            time.sleep(3)
+
+            self.registrar_log("Aguardando 'Ordens de Compra' ficar clicável...")
+            menu_ordens = wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA))
+            menu_ordens.click()
             self.registrar_log("Clicou em 'Ordens de Compra'.")
 
-            wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
+            self.registrar_log("Aguardando 'Todas' ficar clicável...")
+            menu_todas = wait.until(EC.element_to_be_clickable(MENU_TODAS))
+            menu_todas.click()
             self.registrar_log("Clicou no submenu 'Todas'.")
+            # --- Fim do Bloco de Navegação ---
 
             self.registrar_log("Aguardando o iframe de conteúdo...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
@@ -247,7 +258,7 @@ class DownloaderGUI:
                     self.registrar_log(f"ERRO inesperado ao processar a OC {oc}: {e}")
                     self.tirar_print_de_erro(oc)
 
-            self.update_status("Processo concluído! Verifique a pasta de downloads.", "#008A00")
+            self.update_status("Processo concluído! Verifique os arquivos na pasta.", "#008A00")
             self.registrar_log("Todas as OCs da lista foram processadas.")
 
         except FileNotFoundError:
