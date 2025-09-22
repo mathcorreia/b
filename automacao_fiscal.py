@@ -19,10 +19,9 @@ from selenium.common.exceptions import TimeoutException
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
 INPUT_FILENAME = 'lista_ocs.xlsx' # Nome do arquivo Excel de entrada
-DOWNLOAD_DIR_NAME = "Ordens_de_Compra_Baixadas" # Pasta para salvar os PDFs
+# A constante DOWNLOAD_DIR_NAME foi removida
 
 # --- Seletores do Portal SAP (para Ordens de Compra) ---
-# URL ATUALIZADA CONFORME SUA SOLICITAÇÃO
 PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 
@@ -63,7 +62,8 @@ class DownloaderGUI:
         self.log_text.pack(expand=True, fill='both', pady=5)
         
         self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
-        self.download_path = os.path.join(os.getcwd(), DOWNLOAD_DIR_NAME)
+        # --- ALTERAÇÃO AQUI: Define o caminho de download para o diretório atual ---
+        self.download_path = os.getcwd()
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_closing(self):
@@ -113,15 +113,12 @@ class DownloaderGUI:
         self.user_action_event.set()
 
     def setup_driver(self):
-        if not os.path.exists(self.download_path):
-            os.makedirs(self.download_path)
-        
         caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
         service = ChromeService(executable_path=caminho_chromedriver)
         
         options = webdriver.ChromeOptions()
         prefs = {
-            "download.default_directory": self.download_path,
+            "download.default_directory": self.download_path, # Usará o caminho do diretório atual
             "download.prompt_for_download": False,
             "plugins.always_open_pdf_externally": True,
             "safebrowsing.enabled": True
@@ -191,9 +188,6 @@ class DownloaderGUI:
             df_input = pd.read_excel(INPUT_FILENAME, dtype={'OC': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
 
-            if not os.path.exists(self.download_path):
-                os.makedirs(self.download_path)
-            
             ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
             df_a_processar = df_input[~df_input['OC'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
