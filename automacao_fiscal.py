@@ -7,7 +7,7 @@ from tkinter import scrolledtext
 import threading
 from datetime import datetime
 import pandas as pd
-import locale # Importado para obter o nome do mês em português
+import locale
 
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -65,15 +65,12 @@ class DownloaderGUI:
         
         self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
         
-        # --- ALTERAÇÃO AQUI: Lógica para criar caminho dinâmico por mês ---
         try:
-            # Define o local para português do Brasil para pegar o nome do mês corretamente
             locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
         except locale.Error:
             self.registrar_log("Aviso: 'pt_BR.UTF-8' não disponível. Usando a localidade padrão.")
 
         agora = datetime.now()
-        ano = agora.strftime('%Y')
         mes_num = agora.strftime('%m')
         mes_nome = agora.strftime('%B').capitalize()
         
@@ -81,7 +78,6 @@ class DownloaderGUI:
         pasta_do_mes = f"{mes_num} - {mes_nome}"
         
         self.download_path = os.path.join(caminho_base, pasta_do_mes)
-        # --- FIM DA ALTERAÇÃO ---
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -117,7 +113,6 @@ class DownloaderGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state='disabled')
         
-        # --- ALTERAÇÃO AQUI: Cria a pasta do mês se ela não existir ---
         try:
             if not os.path.exists(self.download_path):
                 os.makedirs(self.download_path)
@@ -127,7 +122,6 @@ class DownloaderGUI:
             self.registrar_log(f"ERRO CRÍTICO ao criar pasta de destino: {e}")
             self.action_button.config(state='normal', text="Iniciar Automação")
             return
-        # --- FIM DA ALTERAÇÃO ---
 
         threading.Thread(target=self.run_automation, daemon=True).start()
 
@@ -176,27 +170,27 @@ class DownloaderGUI:
                 time.sleep(1)
                 continue
 
-            pdfs_na_pasta = [os.path.join(self.download_path, f) for f in os.listdir(self.download_path) if f.lower().endswith('.pdf')]
+            # Procura pelo arquivo PDF recém-baixado
+            pdfs_na_pasta = [os.path.join(self.download_path, f) for f in os.listdir(self.download_path) if f.lower().endswith('.pdf') and not f.startswith('OC_')]
             if pdfs_na_pasta:
-                arquivo_recente = max(pdfs_na_pasta, key=os.path.getctime)
-                if time.time() - os.path.getctime(arquivo_recente) < 60:
-                    novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
-                    time.sleep(2)
+                arquivo_recente = pdfs_na_pasta[0] # Pega o primeiro que encontrar
+                novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
+                time.sleep(2)
 
+                try:
+                    shutil.move(arquivo_recente, novo_nome)
+                    self.registrar_log(f"Download concluído e renomeado para: {os.path.basename(novo_nome)}")
+                    return True
+                except Exception as e:
+                    self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para OC {oc_num}: {e}. Tentando novamente.")
+                    time.sleep(3)
                     try:
                         shutil.move(arquivo_recente, novo_nome)
-                        self.registrar_log(f"Download concluído e renomeado para: {os.path.basename(novo_nome)}")
+                        self.registrar_log(f"Sucesso na segunda tentativa: {os.path.basename(novo_nome)}")
                         return True
-                    except Exception as e:
-                        self.registrar_log(f"AVISO: Não foi possível renomear o arquivo para OC {oc_num}: {e}. Tentando novamente.")
-                        time.sleep(3)
-                        try:
-                            shutil.move(arquivo_recente, novo_nome)
-                            self.registrar_log(f"Sucesso na segunda tentativa: {os.path.basename(novo_nome)}")
-                            return True
-                        except Exception as e2:
-                            self.registrar_log(f"ERRO: Falha ao renomear para OC {oc_num}: {e2}")
-                            return False
+                    except Exception as e2:
+                        self.registrar_log(f"ERRO: Falha ao renomear para OC {oc_num}: {e2}")
+                        return False
             time.sleep(1)
 
         self.registrar_log(f"ERRO: Tempo limite de {timeout}s excedido esperando o download da OC {oc_num}.")
@@ -258,6 +252,14 @@ class DownloaderGUI:
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
+                    # --- ALTERAÇÃO AQUI: Limpa arquivos PDF soltos antes de baixar ---
+                    self.registrar_log("Limpando PDFs antigos da pasta de download para evitar erros de renomeação...")
+                    for item in os.listdir(self.download_path):
+                        if item.lower().endswith('.pdf') and not item.startswith('OC_'):
+                            os.remove(os.path.join(self.download_path, item))
+                            self.registrar_log(f"Arquivo antigo removido: {item}")
+                    # --- FIM DA ALTERAÇÃO ---
+
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
                     campo_oc.click()
                     time.sleep(1)
