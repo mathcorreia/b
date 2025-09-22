@@ -26,6 +26,8 @@ IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 
 # Navegação
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
+# <-- ALTERAÇÃO AQUI: Novo seletor adicionado
+MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
 
 # Ações na página de busca
@@ -183,14 +185,11 @@ class DownloaderGUI:
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
             self.update_status("Login detectado. Iniciando busca pelas Ordens de Compra...")
 
-            # <-- ALTERAÇÃO AQUI: Lendo a planilha 'lista' e a coluna 'Nº Os Cliente'
             df_input = pd.read_excel(INPUT_FILENAME, sheet_name='lista', dtype={'Nº Os Cliente': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} OCs.")
 
-            # <-- ALTERAÇÃO AQUI: Processando a coluna 'Nº Os Cliente' para extrair o número principal
             df_input['OC_BASE'] = df_input['Nº Os Cliente'].str.split('/', expand=True)[0]
 
-            # Filtrando OCs já baixadas usando a nova coluna 'OC_BASE'
             ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
             df_a_processar = df_input[~df_input['OC_BASE'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
@@ -206,6 +205,10 @@ class DownloaderGUI:
             wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
             self.registrar_log("Clicou no menu 'Suprimentos'.")
             
+            # <-- ALTERAÇÃO AQUI: Adicionado o clique em 'Ordens de Compra'
+            wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
+            self.registrar_log("Clicou em 'Ordens de Compra'.")
+
             wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
             self.registrar_log("Clicou no submenu 'Todas'.")
 
@@ -215,7 +218,6 @@ class DownloaderGUI:
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
-                # Usando a coluna 'OC_BASE' para a busca
                 oc = str(row['OC_BASE']).strip()
                 processadas_count += 1
                 self.update_status(f"Processando OC: {oc} ({processadas_count}/{total_a_processar})...")
@@ -253,7 +255,6 @@ class DownloaderGUI:
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except KeyError:
-            # <-- ALTERAÇÃO AQUI: Mensagem de erro específica se a coluna 'Nº Os Cliente' não for encontrada
             msg = "ERRO CRÍTICO: A coluna 'Nº Os Cliente' não foi encontrada na planilha 'lista' do arquivo 'lista.xlsx'. Por favor, verifique o nome da coluna."
             self.update_status(msg, "red")
             self.registrar_log(msg)
