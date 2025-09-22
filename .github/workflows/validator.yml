@@ -1,4 +1,4 @@
-name: Build Validador EXE with PyInstaller
+name: Build EXE with PyInstaller - Automacao Fiscal
 
 on:
   workflow_dispatch:
@@ -32,21 +32,13 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      - name: List files in the repository root
-        run: dir
-
-      - name: Build Validador EXE
+      - name: Build EXE
         run: |
-          pyinstaller --noconsole `
-            --name ValidadorRevisao `
-            --onefile `
-            --hidden-import=pandas._libs.tslibs.np_datetime `
-            --hidden-import=pandas._libs.tslibs.nattype `
-            validador_revisao.py
+         pyinstaller --onefile --hidden-import=pandas._libs.tslibs.np_datetime --hidden-import=pandas._libs.tslibs.nattype  automacao_fiscal.py
 
-      - name: Upload Validador EXE
+
+      - name: Upload EXE
         uses: actions/upload-artifact@v4
         with:
-          name: ValidadorRevisao
-          path: dist/ValidadorRevisao.exe
-
+          name: automacao_fiscal
+          path: dist/automacao_fiscal.exe
