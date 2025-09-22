@@ -307,11 +307,10 @@ class ValidadorGUI:
     
     def buscar_revisao_engenharia(self, wait, part_number):
         """
-        Busca a revisão de engenharia para um Part Number específico,
-        navegando corretamente entre os iframes e retornando à tela de busca.
+        Busca a revisão de engenharia para um Part Number específico.
+        VERSÃO 2: Foco em robustez no clique do botão 'Desenho'.
         """
-        # Sempre comece retornando ao conteúdo principal para evitar erros de contexto de iframes anteriores.
-        self.registrar_log(f"Iniciando busca pela revisão do PN: {part_number}")
+        self.registrar_log(f"Iniciando busca v2 pela revisão do PN: {part_number}")
         self.driver.switch_to.default_content()
 
         try:
@@ -319,63 +318,65 @@ class ValidadorGUI:
                 self.registrar_log("PN não fornecido ou inválido. Pulando busca.")
                 return "PN não fornecido"
 
-            # 1. Entra no iframe principal da área de conteúdo
-            self.registrar_log("Aguardando e mudando para o iframe principal 'contentAreaFrame'...")
+            # 1. Navega para a estrutura de iframes
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-            
-            # 2. Entra no iframe ANINHADO que contém o formulário (o ID pode variar, mas geralmente começa com 'ivuFrm')
-            self.registrar_log("Aguardando e mudando para o iframe aninhado da aplicação...")
-            # Nota: O ID 'ivuFrm_page0ivu0' pode mudar. Se falhar, verifique o HTML da página.
-            # Uma alternativa mais robusta seria buscar por um iframe cujo nome ou src seja mais estável.
             wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
-            self.registrar_log("Navegação para iframes concluída com sucesso.")
+            self.registrar_log("Navegação para iframes concluída.")
 
-            # 3. Interage com o formulário de busca
-            self.registrar_log(f"Preenchendo o campo com o Part Number: {part_number}")
-            campo_pn = wait.until(EC.element_to_be_clickable((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+            # 2. Interage com o formulário de busca
+            campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             campo_pn.clear()
             campo_pn.send_keys(part_number)
+            self.registrar_log(f"Campo preenchido com o Part Number: {part_number}")
+
+
+            # 3. Adiciona uma pequena pausa estratégica para a UI reagir
+            time.sleep(0.5) 
+
+            # 4. Tenta localizar e clicar no botão com um seletor mais direto
+            self.registrar_log("Tentando localizar o botão 'Desenho'...")
+            # Este seletor busca por uma tag <a> que contenha o texto 'Desenho' em qualquer lugar dentro dela.
+            # É uma das formas mais robustas de encontrar links/botões.
+            seletor_botao_desenho = "//a[contains(., 'Desenho')]"
             
-            # 4. Clica no botão de busca (usando o XPath da sua imagem)
-            self.registrar_log("Clicando no botão 'Desenho' para iniciar a consulta...")
-            # O elemento clicável pode ser o <a> ou <span>. O XPath abaixo busca pelo texto.
-            # Usar '..' para subir para o elemento pai clicável é uma boa prática.
-            botao_desenho = wait.until(EC.element_to_be_clickable((By.XPATH, "//*[text()='Desenho']/ancestor::a | //*[text()='Desenho']/ancestor::span")))
-            self.driver.execute_script("arguments[0].click();", botao_desenho) # Clique com JavaScript é mais robusto
+            botao_desenho = wait.until(EC.presence_of_element_located((By.XPATH, seletor_botao_desenho)))
+            self.registrar_log("Botão 'Desenho' localizado. Executando clique com JavaScript.")
+            
+            self.driver.execute_script("arguments[0].click();", botao_desenho)
 
             # 5. Aguarda o resultado e extrai a revisão
             self.registrar_log("Aguardando o resultado da busca...")
-            # O resultado aparece na mesma estrutura de iframe.
             seletor_rev = "//span[contains(text(), 'Rev ')]"
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
-            revisao_raw = rev_element.text # Ex: "Rev N"
+            revisao_raw = rev_element.text
             revisao = revisao_raw.split(" ")[-1]
             self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
             
-            # 6. Clica no botão "Voltar" para preparar para a próxima busca
+            # 6. Clica em "Voltar" para preparar a próxima busca
             self.registrar_log("Retornando para a tela de busca...")
-            botao_voltar = wait.until(EC.element_to_be_clickable((By.XPATH, "//span[text()='Voltar']/ancestor::a")))
+            # Usamos o mesmo método robusto para o botão 'Voltar'
+            botao_voltar = wait.until(EC.presence_of_element_located((By.XPATH, "//a[contains(., 'Voltar')]")))
             self.driver.execute_script("arguments[0].click();", botao_voltar)
 
-            # 7. Aguarda um elemento da tela de busca reaparecer para confirmar o retorno
+            # 7. Confirma o retorno
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             self.registrar_log("Retorno à tela de busca confirmado.")
             
             return revisao
 
         except TimeoutException:
-            self.registrar_log(f"ERRO (Timeout): Revisão não encontrada ou página demorou a carregar para o PN {part_number}. Verifique o screenshot.")
+            self.registrar_log(f"ERRO (Timeout): Botão 'Desenho' não encontrado ou resultado não apareceu para o PN {part_number}.")
             self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
             return "Não encontrada"
         except Exception as e:
-            self.registrar_log(f"ERRO GERAL ao buscar revisão de engenharia para PN {part_number}: {e}")
+            self.registrar_log(f"ERRO GERAL ao buscar revisão para PN {part_number}: {traceback.format_exc()}")
             self.tirar_print_de_erro(part_number, "busca_revisao_erro")
             return "Falha na busca"
         finally:
-            # ESSENCIAL: Retorna ao contexto principal da página para a próxima iteração do loop.
             self.registrar_log("Retornando para o conteúdo principal da página (default_content).")
             self.driver.switch_to.default_content()
+
 
 
     def safe_find_text(self, by, value):
