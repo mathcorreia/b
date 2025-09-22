@@ -94,7 +94,6 @@ class ValidadorGUI:
         self.user_action_event.set()
 
     def setup_excel(self):
-        """Cria o ficheiro Excel com o cabeçalho se ele não existir."""
         if not os.path.exists(self.excel_path):
             workbook = openpyxl.Workbook()
             sheet = workbook.active
@@ -205,7 +204,7 @@ class ValidadorGUI:
                 self.registrar_log("Nenhuma revisão de engenharia pendente para verificação.")
             else:
                 if not self.driver:
-                    self.update_status("Configurando navegador para a Etapa 2...")
+                    self.update_status("Configurando navegador para Etapa 2...")
                     caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
                     service = ChromeService(executable_path=caminho_chromedriver)
                     options = webdriver.ChromeOptions()
@@ -217,7 +216,7 @@ class ValidadorGUI:
                     self.driver = webdriver.Chrome(service=service, options=options)
                     wait = WebDriverWait(self.driver, 15)
                     self.driver.get("https://web.embraer.com.br/irj/portal")
-                    self.prompt_user_action("Faça o login para a etapa de comparação e clique em 'Continuar'.")
+                    self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
 
                 self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
                 self.navegar_para_desenhos_engenharia(wait)
@@ -274,7 +273,7 @@ class ValidadorGUI:
             if handle != original_window:
                 self.driver.switch_to.window(handle)
                 break
-        self.prompt_user_action("Navegue até 'FSE' > 'Busca FSe' no navegador. A automação continuará após você clicar em 'Continuar'.")
+        self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe' e clique em 'Continuar'.")
 
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
         try:
@@ -287,7 +286,7 @@ class ValidadorGUI:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
-            # <-- MUDANÇA 2: LÓGICA DE EXTRAÇÃO E DIVISÃO CORRIGIDA -->
+            # <-- MUDANÇA: LÓGICA DE EXTRAÇÃO E DIVISÃO CORRIGIDA E MAIS ROBUSTA -->
             dados = {"OS": os_num}
             
             # OC / Item
@@ -304,11 +303,13 @@ class ValidadorGUI:
 
             # PN / REV. PN / LID
             pn_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').strip()
-            pn_split = [x.strip() for x in pn_raw.split('\n')]
-            dados["PN"] = pn_split[0] if len(pn_split) > 0 else ""
-            dados["REV. PN"] = pn_split[1] if len(pn_split) > 1 else ""
-            dados["LID"] = pn_split[2] if len(pn_split) > 2 else ""
-
+            # Junta tudo em uma linha e divide por espaços para tratar os dois formatos
+            pn_parts = pn_raw.replace('\n', ' ').split()
+            pn_parts = [part for part in pn_parts if part] # Remove itens vazios
+            dados["PN"] = pn_parts[0] if len(pn_parts) > 0 else ""
+            dados["REV. PN"] = pn_parts[1] if len(pn_parts) > 1 else ""
+            dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
+            
             # Campos restantes
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
