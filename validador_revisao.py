@@ -327,9 +327,9 @@ class ValidadorGUI:
 
     def buscar_revisao_engenharia(self, wait, part_number):
         """
-        VERSÃO 4 (FINAL): Utiliza o seletor XPath definitivo baseado no HTML inspecionado.
+        VERSÃO 5 (FINAL): Utiliza os XPaths exatos fornecidos pelo usuário via inspeção de elemento.
         """
-        self.registrar_log(f"Iniciando busca v4 (Final) pela revisão do PN: {part_number}")
+        self.registrar_log(f"Iniciando busca v5 (Final com XPath Exato) para o PN: {part_number}")
         self.driver.switch_to.default_content()
 
         try:
@@ -347,34 +347,40 @@ class ValidadorGUI:
             self.registrar_log(f"Campo preenchido com: {part_number}")
             time.sleep(0.5)
 
-            # 3. Usa o método robusto com o SELETOR CORRETO para o botão "Desenho"
+            # 3. Usa o método robusto com o SELETOR EXATO para o botão "Desenho"
+            #    Nota: O seletor aponta para o elemento pai do <span>, que é o correto para o clique.
             seletores_desenho = [
-                "//a[@title='Desenho']",       # <-- O SELETOR DEFINITIVO E CORRETO!
-                "//a[contains(., 'Desenho')]"  # Mantido como um backup secundário
+                '//*[@id="FOAH.Dplpl049View.cmdGBI"]'  # <-- SELETOR EXATO E DEFINITIVO FORNECIDO!
             ]
             
-            # ATENÇÃO: Verifique se o nome da sua função é 'find_and_click' ou 'find_and_click_robust'
-            # e ajuste a linha abaixo se necessário. No seu último código era 'find_and_click'.
+            # Usei o nome da sua função 'find_and_click'
             if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
-                raise TimeoutException("Falha ao clicar no botão 'Desenho' com o seletor definitivo.")
+                raise TimeoutException("Falha ao clicar no botão 'Desenho' com o seletor exato.")
 
-            # 4. Aguarda e extrai a revisão
-            self.registrar_log("Aguardando o resultado da busca...")
-            seletor_rev = "//span[contains(text(), 'Rev ')]"
+            # 4. Aguarda e extrai a revisão usando o SELETOR EXATO para os dados
+            self.registrar_log("Aguardando o resultado da busca (árvore de arquivos)...")
+            
+            # SELETOR EXATO para o dado da revisão
+            seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             
-            revisao_raw = rev_element.text
-            revisao = revisao_raw.split(" ")[-1]
+            revisao_raw = rev_element.text # Ex: "Rev N"
+            revisao = revisao_raw.split(" ")[-1] # Pega a última parte do texto, que é a revisão
             self.registrar_log(f"SUCESSO: Revisão encontrada para PN {part_number}: {revisao}")
             
-            # 5. Usa o método robusto para clicar em "Voltar"
+            # 5. Clica em "Voltar" para preparar a próxima busca
+            #    Mantemos o método robusto para o "Voltar", pois não temos seu ID exato.
             seletores_voltar = [
                 "//a[contains(., 'Voltar')]",
                 "//span[text()='Voltar']/ancestor::a",
                 "//a[@title='Voltar']"
             ]
             if not self.find_and_click(wait, seletores_voltar, "Botão Voltar"):
-                raise TimeoutException("Falha ao clicar no botão 'Voltar' para retornar.")
+                # Se não encontrar o botão 'Voltar', uma alternativa é clicar no link de navegação
+                # para recarregar a tela de busca do zero.
+                self.registrar_log("Botão 'Voltar' não encontrado, tentando recarregar a página de busca...")
+                self.navegar_para_desenhos_engenharia(wait)
+
 
             # 6. Confirma o retorno à tela de busca
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
@@ -393,7 +399,6 @@ class ValidadorGUI:
         finally:
             self.registrar_log("Retornando para o conteúdo principal da página (default_content).")
             self.driver.switch_to.default_content()
-
 
 
     def safe_find_text(self, by, value):
