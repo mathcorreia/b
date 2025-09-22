@@ -127,8 +127,9 @@ class ValidadorGUI:
             df_input['OS'] = df_input['OS'].astype(str)
             self.registrar_log(f"Arquivo 'lista.xlsx' lido. Total de {len(df_input)} OCs na lista.")
 
-            df_input = df_input.head(10)
-            self.registrar_log(f"AVISO: Modo de teste ativo. A execução será limitada às primeiras 10 OCs da lista.")
+            # --- REMOVIDO LIMITE DE TESTE ---
+            # df_input = df_input.head(10)
+            # self.registrar_log(f"AVISO: Modo de teste ativo. A execução será limitada às primeiras 10 OCs da lista.")
 
             self.update_status("Verificando OCs já processadas...")
             os_ja_verificadas = set()
@@ -142,7 +143,7 @@ class ValidadorGUI:
 
             df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
             novas_os_count = len(df_a_processar)
-            self.registrar_log(f"{len(df_input) - novas_os_count} OSs da lista de teste já foram processadas e serão ignoradas.")
+            self.registrar_log(f"{len(df_input) - novas_os_count} OCs da lista já foram processadas e serão ignoradas.")
 
             if novas_os_count == 0:
                 self.update_status("Nenhuma OC nova para extrair. Verificando comparações pendentes...", "#00529B")
@@ -170,6 +171,7 @@ class ValidadorGUI:
                 for index, row in df_a_processar.iterrows():
                     os_num = str(row['OS'])
                     oc_completa = f"{row['OC_antes']}/{row['OC_depois']}"
+                    # --- LOG SIMPLIFICADO ---
                     self.update_status(f"Extraindo dados da OC: {oc_completa}...")
                     self.registrar_log(f"Extraindo dados da FSE para a OC: {oc_completa}")
                     dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
@@ -226,6 +228,7 @@ class ValidadorGUI:
                     pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
                     rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
                     
+                    # --- LOG SIMPLIFICADO ---
                     self.update_status(f"Consultando revisão para o PN: {pn_extraido}...")
                     self.registrar_log(f"Consultando Revisão de Engenharia para o Part Number: {pn_extraido}")
 
@@ -286,36 +289,29 @@ class ValidadorGUI:
             wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
             
-            # <-- MUDANÇA: LÓGICA DE EXTRAÇÃO E DIVISÃO CORRIGIDA E MAIS ROBUSTA -->
             dados = {"OS": os_num}
             
-            # OC / Item
             oc_item_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', '/').strip()
             oc_item_split = [x.strip() for x in oc_item_raw.split('/')]
             dados["OC"] = oc_item_split[0] if len(oc_item_split) > 0 else ""
             dados["Item"] = oc_item_split[1] if len(oc_item_split) > 1 else ""
 
-            # CODEM / DT. REV. ROT.
             codem_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').strip()
             codem_split = [x.strip() for x in codem_raw.split('\n')]
             dados["CODEM"] = codem_split[0] if len(codem_split) > 0 else ""
             dados["DT. REV. ROT."] = codem_split[1] if len(codem_split) > 1 else ""
 
-            # PN / REV. PN / LID
             pn_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').strip()
-            # Junta tudo em uma linha e divide por espaços para tratar os dois formatos
             pn_parts = pn_raw.replace('\n', ' ').split()
-            pn_parts = [part for part in pn_parts if part] # Remove itens vazios
+            pn_parts = [part for part in pn_parts if part]
             dados["PN"] = pn_parts[0] if len(pn_parts) > 0 else ""
             dados["REV. PN"] = pn_parts[1] if len(pn_parts) > 1 else ""
             dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
             
-            # Campos restantes
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
             
-            # Lógica para extrair PN e REV agora usa os campos já separados
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
             dados["PN extraído"] = pn_extraido_match.group(1) if pn_extraido_match else "Não encontrado"
             dados["REV. FSE"] = dados.get("REV. PN", "Não encontrada")
