@@ -327,10 +327,9 @@ class ValidadorGUI:
 
     def buscar_revisao_engenharia(self, wait, part_number):
         """
-        Busca a revisão de engenharia para um Part Number específico.
-        VERSÃO 3: Utiliza múltiplas tentativas de seletores para máxima robustez.
+        VERSÃO 4 (FINAL): Utiliza o seletor XPath definitivo baseado no HTML inspecionado.
         """
-        self.registrar_log(f"Iniciando busca v3 (robusta) pela revisão do PN: {part_number}")
+        self.registrar_log(f"Iniciando busca v4 (Final) pela revisão do PN: {part_number}")
         self.driver.switch_to.default_content()
 
         try:
@@ -348,16 +347,16 @@ class ValidadorGUI:
             self.registrar_log(f"Campo preenchido com: {part_number}")
             time.sleep(0.5)
 
-            # 3. Usa o método robusto para encontrar e clicar no botão "Desenho"
+            # 3. Usa o método robusto com o SELETOR CORRETO para o botão "Desenho"
             seletores_desenho = [
-                "//a[contains(., 'Desenho')]",                     # Se for um link <a> com o texto
-                "//span[text()='Desenho']/ancestor::a",           # Se o texto estiver num <span> dentro de um <a>
-                "//a[@title='Desenho']",                          # Se o texto estiver no atributo 'title' do link
-                "//span[contains(text(), 'Desenho')]/parent::*"   # Se o texto estiver num <span>, clica no elemento pai
+                "//a[@title='Desenho']",       # <-- O SELETOR DEFINITIVO E CORRETO!
+                "//a[contains(., 'Desenho')]"  # Mantido como um backup secundário
             ]
             
-            if not self.find_and_click_robust(wait, seletores_desenho, "Botão Desenho"):
-                raise TimeoutException("Falha ao clicar no botão 'Desenho' após múltiplas tentativas.")
+            # ATENÇÃO: Verifique se o nome da sua função é 'find_and_click' ou 'find_and_click_robust'
+            # e ajuste a linha abaixo se necessário. No seu último código era 'find_and_click'.
+            if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
+                raise TimeoutException("Falha ao clicar no botão 'Desenho' com o seletor definitivo.")
 
             # 4. Aguarda e extrai a revisão
             self.registrar_log("Aguardando o resultado da busca...")
@@ -374,7 +373,7 @@ class ValidadorGUI:
                 "//span[text()='Voltar']/ancestor::a",
                 "//a[@title='Voltar']"
             ]
-            if not self.find_and_click_robust(wait, seletores_voltar, "Botão Voltar"):
+            if not self.find_and_click(wait, seletores_voltar, "Botão Voltar"):
                 raise TimeoutException("Falha ao clicar no botão 'Voltar' para retornar.")
 
             # 6. Confirma o retorno à tela de busca
