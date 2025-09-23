@@ -3,7 +3,6 @@ import time
 import shutil
 import pandas as pd
 import openpyxl
-import locale
 import re
 import traceback
 import tkinter as tk
@@ -17,8 +16,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
+
+# Biblioteca para conectar com SQL Server
 import pyodbc
 
+# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -26,7 +28,7 @@ class ValidadorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Validador de Revisão de Engenharia")
-        self.root.geometry("650x400")
+        self.root.geometry("850x650")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
@@ -247,7 +249,17 @@ class ValidadorGUI:
             else:
                 if not self.driver:
                     self.update_status("Configurando navegador para Etapa 2...")
-                    # ... (código de configuração do driver, se necessário) ...
+                    caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                    service = ChromeService(executable_path=caminho_chromedriver)
+                    options = webdriver.ChromeOptions()
+                    options.add_argument("--start-maximized")
+                    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                    options.add_experimental_option('useAutomationExtension', False)
+                    options.add_argument("--disable-blink-features=AutomationControlled")
+                    self.driver = webdriver.Chrome(service=service, options=options)
+                    wait = WebDriverWait(self.driver, 15)
+                    self.driver.get("https://web.embraer.com.br/irj/portal")
+                    self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
 
                 self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
                 self.navegar_para_desenhos_engenharia(wait)
@@ -262,13 +274,13 @@ class ValidadorGUI:
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
                         dados_banco = self.consultar_dados_banco(pn_extraido)
                         
+                        # !! IMPORTANTE: Confirme qual das colunas de revisão do banco deve ser usada para comparar !!
                         revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
                         
                         status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
                         status_banco_fse, detalhes_banco_fse = self.comparar_revisoes(revisao_banco, rev_fse, "BANCO", "FSE")
                         status_banco_eng, detalhes_banco_eng = self.comparar_revisoes(revisao_banco, rev_engenharia, "BANCO", "ENG")
 
-                        # Salva os dados no Excel
                         sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
                         sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
                         
@@ -363,6 +375,16 @@ class ValidadorGUI:
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return None
     
+    def navegar_para_fse_busca(self, wait):
+        original_window = self.driver.current_window_handle
+        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
+        wait.until(EC.number_of_windows_to_be(2))
+        for handle in self.driver.window_handles:
+            if handle != original_window:
+                self.driver.switch_to.window(handle)
+                break
+        self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe' e clique em 'Continuar'.")
+
     def navegar_para_desenhos_engenharia(self, wait):
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.driver.get("https://web.embraer.com.br/irj/portal")
