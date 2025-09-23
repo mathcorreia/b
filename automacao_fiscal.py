@@ -17,26 +17,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
+# --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
 INPUT_FILENAME = 'PO-ACK.xlsx'
 
+# --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 IFRAME_ANINHADO = (By.ID, "ivuFrm_page0ivu0")
 
+# Navegação
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
 MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
 
+# Ações na página de busca
 CAMPO_ORDEM_COMPRA = (By.ID, "GOCI.Wzsulmm100View.txtPO")
 LINK_EXIBE_PDF = (By.ID, "GOCI.Wzsulmm100View.lnaPDF.0")
 
 
 class DownloaderGUI:
-    def _init_(self, root):
+    def __init__(self, root):
         self.root = root
         self.root.title("Automação de Download de Ordens de Compra")
-        self.root.geometry("500x400")
+        self.root.geometry("850x650")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
@@ -64,13 +68,14 @@ class DownloaderGUI:
         try:
             locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
         except locale.Error:
-            self.registrar_log("Aviso: 'pt_BR.UTF-8' não disponível. Usando a localidade padrão.")
+            pass
 
         agora = datetime.now()
         mes_num = agora.strftime('%m')
         mes_nome = agora.strftime('%B').capitalize()
         
-        caminho_base = r"\\po.embrarer\Comercial\1OC's Embraer Produtivo 2025"
+        # --- ALTERAÇÃO AQUI: Caminho da pasta de rede corrigido ---
+        caminho_base = r"\\fserver\po.embraer\Comercial\1OC's Embraer Produtivo 2025"
         pasta_do_mes = f"{mes_num} - {mes_nome}"
         
         self.download_path = os.path.join(caminho_base, pasta_do_mes)
@@ -174,7 +179,7 @@ class DownloaderGUI:
             if pdf_novo:
                 arquivo_recente = os.path.join(self.download_path, pdf_novo[0])
                 novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
-                time.sleep(2) 
+                time.sleep(2)
 
                 try:
                     shutil.move(arquivo_recente, novo_nome)
