@@ -17,10 +17,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Biblioteca para conectar com SQL Server
 import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -128,7 +126,7 @@ class ValidadorGUI:
         self.registrar_log(f"Consultando banco de dados para o PN: {part_number}...")
         
         string_conexao = (
-            r'DRIVER={ODBC Driver 17 for SQL Server};'
+            r'DRIVER={SQL Server};'
             r'SERVER=172.20.1.7;DATABASE=CPS;UID=sa;PWD=masterkey;'
         )
         
@@ -274,7 +272,6 @@ class ValidadorGUI:
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
                         dados_banco = self.consultar_dados_banco(pn_extraido)
                         
-                        # !! IMPORTANTE: Confirme qual das colunas de revisão do banco deve ser usada para comparar !!
                         revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
                         
                         status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
