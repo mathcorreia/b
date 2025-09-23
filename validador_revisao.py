@@ -360,7 +360,6 @@ class ValidadorGUI:
             
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            # --- SELETOR CORRIGIDO E MAIS ROBUSTO PARA NÚMERO DE SERIAÇÃO ---
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[1]/following-sibling::div[1]//span")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
             
@@ -457,7 +456,7 @@ class ValidadorGUI:
     def tirar_print_de_erro(self, identificador, etapa):
         # Revertido para salvar localmente, conforme solicitado
         local_path = os.getcwd()
-        identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", identificador)
+        identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         nome_screenshot = f"erro_local_{etapa}_{identificador_limpo}_{timestamp}.png"
         screenshot_path = os.path.join(local_path, nome_screenshot)
