@@ -1,0 +1,68 @@
+('C:\\Users\\matheus.correia\\Documents\\Automações '
+ 'Planifer\\b\\build\\automacao_fiscal\\automacao_fiscal.pkg',
+ {'BINARY': True,
+  'DATA': True,
+  'EXECUTABLE': True,
+  'EXTENSION': True,
+  'PYMODULE': True,
+  'PYSOURCE': True,
+  'PYZ': False,
+  'SPLASH': True,
+  'SYMLINK': False},
+ [('pyi-contents-directory _internal', '', 'OPTION'),
+  ('PYZ-00.pyz',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\PYZ-00.pyz',
+   'PYZ'),
+  ('struct',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\localpycs\\struct.pyc',
+   'PYMODULE'),
+  ('pyimod01_archive',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\localpycs\\pyimod01_archive.pyc',
+   'PYMODULE'),
+  ('pyimod02_importers',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\localpycs\\pyimod02_importers.pyc',
+   'PYMODULE'),
+  ('pyimod03_ctypes',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\localpycs\\pyimod03_ctypes.pyc',
+   'PYMODULE'),
+  ('pyimod04_pywin32',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\build\\automacao_fiscal\\localpycs\\pyimod04_pywin32.pyc',
+   'PYMODULE'),
+  ('pyiboot01_bootstrap',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\venv\\Lib\\site-packages\\PyInstaller\\loader\\pyiboot01_bootstrap.py',
+   'PYSOURCE'),
+  ('pyi_rth_inspect',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_inspect.py',
+   'PYSOURCE'),
+  ('pyi_rth_multiprocessing',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_multiprocessing.py',
+   'PYSOURCE'),
+  ('pyi_rth_pkgutil',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth_pkgutil.py',
+   'PYSOURCE'),
+  ('pyi_rth__tkinter',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\venv\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks\\pyi_rth__tkinter.py',
+   'PYSOURCE'),
+  ('automacao_fiscal',
+   'C:\\Users\\matheus.correia\\Documents\\Automações '
+   'Planifer\\b\\automacao_fiscal.py',
+   'PYSOURCE')],
+ 'python313.dll',
+ True,
+ False,
+ False,
+ [],
+ None,
+ None,
+ None)

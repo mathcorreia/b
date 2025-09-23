@@ -16,7 +16,6 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# --- CONSTANTES GLOBAIS DE CONFIGURAÇÃO ---
 DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
 PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
 LOG_FILENAME = 'log_automacao.txt'
@@ -27,14 +26,12 @@ class AutomatorGUI:
         self.root = root
         self.root.title("Automator Embraer Produtivo - Painel de Controle")
         self.root.geometry("850x650")
-        # --- NOVO: Faz a janela ficar sempre na frente ---
-        self.root.attributes('-topmost', True)
+   
         
         # Evento para sincronizar a thread de automação com as ações do usuário na GUI
         self.user_action_event = threading.Event()
         self.reprocess_choice = "" # Armazena a escolha do usuário para reprocessamento
 
-        # --- Layout da Interface ---
         main_frame = tk.Frame(root, padx=10, pady=10)
         main_frame.pack(expand=True, fill='both')
 
@@ -108,7 +105,7 @@ class AutomatorGUI:
             self.action_button.config(text="Continuar (Após realizar a ação)", command=self.signal_user_action, state="normal")
         
         self.root.after(0, setup_gui_for_action)
-        self.user_action_event.wait() # Pausa a thread de automação aqui
+        self.user_action_event.wait() 
 
         def reset_gui_after_action():
             self.action_button.config(state='disabled', text="Executando...")
@@ -121,7 +118,6 @@ class AutomatorGUI:
 
     def run_automation(self):
         try:
-            # --- CONFIGURAÇÃO INICIAL ---
             self.update_status("Iniciando configuração...")
             try:
                 locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
@@ -145,14 +141,12 @@ class AutomatorGUI:
                 os.makedirs(pasta, exist_ok=True)
             self.registrar_log(f"Pasta de destino do mês atual: {PASTA_MES}")
 
-            # --- LEITURA DO EXCEL ---
             self.update_status("Lendo arquivo Excel 'lista.xlsx'...")
             df = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df.rename(columns={df.columns[0]: 'OS'}, inplace=True)
             df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             self.registrar_log(f"Arquivo Excel lido. Total de {len(df)} itens na lista.")
 
-            # --- VERIFICAÇÃO RETROATIVA ---
             self.update_status("Verificando arquivos já existentes (até 2 anos)...")
             arquivos_existentes = set()
             if os.path.exists(PASTA_RAIZ_VERIFICACAO):
@@ -184,7 +178,6 @@ class AutomatorGUI:
                 self.action_button.pack_forget()
                 return
 
-            # --- CONFIGURAÇÃO DO NAVEGADOR ---
             self.update_status("Configurando o navegador...")
             caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
             service = ChromeService(executable_path=caminho_chromedriver)
@@ -194,7 +187,6 @@ class AutomatorGUI:
             self.driver = webdriver.Chrome(service=service, options=options)
             wait = WebDriverWait(self.driver, 30) # Wait longo para ações gerais
 
-            # --- ETAPAS DE AUTOMAÇÃO COM INTERAÇÃO DO USUÁRIO ---
             self.driver.get("https://web.embraer.com.br/irj/portal")
             self.prompt_user_action("Faça o login no portal. Quando a página principal carregar, clique em 'Continuar'.")
 
@@ -210,12 +202,10 @@ class AutomatorGUI:
 
             self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe'. Quando a tela de busca carregar, clique em 'Continuar'.")
 
-            # --- LOOP DE PROCESSAMENTO PRINCIPAL ---
             for index, row in df_filtrado.iterrows():
                 self.update_status(f"Processando OS: {row['OS_str']}...")
                 self.processar_uma_os(wait, row, pastas_destino)
             
-            # --- REPROCESSAMENTO DE ERROS ---
             self.reprocessar_erros(df_filtrado, wait, pastas_destino)
 
         except Exception as e:
@@ -263,14 +253,12 @@ class AutomatorGUI:
             campo_oc2.send_keys(oc2)
             wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
             
-            # --- NOVO: Verificação específica se a OS foi encontrada ---
             try:
-                # Usa um wait curto para verificar o resultado da busca
                 WebDriverWait(self.driver, 5).until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
             except TimeoutException:
                 self.registrar_log(f"ERRO: OS {os_num} não encontrada ou a busca falhou. Pulando para a próxima.")
                 self.tirar_print_de_erro(os_num)
-                return # Pula para a próxima OS
+                return 
             
             docs_a_processar = {
                 'LM': {"seletor": "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[1]/button[1]", "existe": row['ja_existe_lm']},
@@ -283,7 +271,7 @@ class AutomatorGUI:
                     self.registrar_log(f"SKIP ({tipo}): Documento para OS {os_num} já existe.")
                     continue
                 try:
-                    time.sleep(1) # Pausa otimizada
+                    time.sleep(1) 
                     button = wait.until(EC.element_to_be_clickable((By.XPATH, info['seletor'])))
                     self.driver.execute_script("arguments[0].scrollIntoView({block: 'center', inline: 'nearest'});", button)
                     time.sleep(0.5)

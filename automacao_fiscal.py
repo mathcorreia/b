@@ -17,31 +17,26 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
-# --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
-# --- ALTERAÇÃO AQUI: Nome do arquivo de entrada atualizado ---
 INPUT_FILENAME = 'PO-ACK.xlsx'
 
-# --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
 IFRAME_CONTEUDO_PRINCIPAL = (By.ID, "contentAreaFrame")
 IFRAME_ANINHADO = (By.ID, "ivuFrm_page0ivu0")
 
-# Navegação
 MENU_SUPRIMENTOS = (By.ID, "tabIndex1")
 MENU_ORDENS_COMPRA = (By.ID, "L2N0") 
 MENU_TODAS = (By.ID, "0L3N1")
 
-# Ações na página de busca
 CAMPO_ORDEM_COMPRA = (By.ID, "GOCI.Wzsulmm100View.txtPO")
 LINK_EXIBE_PDF = (By.ID, "GOCI.Wzsulmm100View.lnaPDF.0")
 
 
 class DownloaderGUI:
-    def __init__(self, root):
+    def _init_(self, root):
         self.root = root
         self.root.title("Automação de Download de Ordens de Compra")
-        self.root.geometry("850x650")
+        self.root.geometry("500x400")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
@@ -161,7 +156,7 @@ class DownloaderGUI:
             self.update_status("ERRO: Verifique se o chromedriver.exe está na pasta e é compatível com seu Chrome.", "red")
             return None, None
 
-    def esperar_download_concluir(self, oc_num, timeout=90):
+    def esperar_download_concluir(self, oc_num, arquivos_antes, timeout=90):
         self.registrar_log(f"Aguardando download do PDF para a PO {oc_num}...")
         self.update_status(f"Aguardando download para PO {oc_num}...")
         
@@ -171,11 +166,15 @@ class DownloaderGUI:
                 time.sleep(1)
                 continue
 
-            pdfs_na_pasta = [os.path.join(self.download_path, f) for f in os.listdir(self.download_path) if f.lower().endswith('.pdf') and not f.startswith('OC_')]
-            if pdfs_na_pasta:
-                arquivo_recente = pdfs_na_pasta[0]
+            arquivos_depois = set(os.listdir(self.download_path))
+            arquivos_novos = arquivos_depois - arquivos_antes
+            
+            pdf_novo = [f for f in arquivos_novos if f.lower().endswith('.pdf')]
+
+            if pdf_novo:
+                arquivo_recente = os.path.join(self.download_path, pdf_novo[0])
                 novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
-                time.sleep(2)
+                time.sleep(2) 
 
                 try:
                     shutil.move(arquivo_recente, novo_nome)
@@ -210,12 +209,9 @@ class DownloaderGUI:
             self.registrar_log("Usuário clicou em 'Continuar'. Retomando automação.")
             self.update_status("Login detectado. Buscando Ordens de Compra...")
 
-            # --- ALTERAÇÃO AQUI: Lendo a coluna 'PO' e tratando como string ---
             df_input = pd.read_excel(INPUT_FILENAME, dtype={'PO': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} POs.")
 
-            # --- ALTERAÇÃO AQUI: Lógica de split removida ---
-            # A verificação de arquivos existentes agora usa a coluna 'PO' diretamente
             ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
             df_a_processar = df_input[~df_input['PO'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
@@ -248,18 +244,11 @@ class DownloaderGUI:
 
             processadas_count = 0
             for index, row in df_a_processar.iterrows():
-                # --- ALTERAÇÃO AQUI: Usando a coluna 'PO' diretamente ---
                 oc = str(row['PO']).strip()
                 processadas_count += 1
                 self.update_status(f"Processando PO: {oc} ({processadas_count}/{total_a_processar})...")
                 
                 try:
-                    self.registrar_log("Limpando PDFs antigos da pasta de download...")
-                    for item in os.listdir(self.download_path):
-                        if item.lower().endswith('.pdf') and not item.startswith('OC_'):
-                            os.remove(os.path.join(self.download_path, item))
-                            self.registrar_log(f"Arquivo antigo removido: {item}")
-
                     campo_oc = wait.until(EC.element_to_be_clickable(CAMPO_ORDEM_COMPRA))
                     campo_oc.click()
                     time.sleep(1)
@@ -270,6 +259,8 @@ class DownloaderGUI:
                     
                     self.registrar_log("Aguardando o link do PDF aparecer...")
                     link_pdf = wait.until(EC.element_to_be_clickable(LINK_EXIBE_PDF))
+                    
+                    arquivos_antes_download = set(os.listdir(self.download_path))
                     
                     aba_principal = driver.current_window_handle
                     link_pdf.click()
@@ -283,7 +274,7 @@ class DownloaderGUI:
                             self.registrar_log("Foco mudou para a aba do PDF.")
                             break
                     
-                    self.esperar_download_concluir(oc)
+                    self.esperar_download_concluir(oc, arquivos_antes_download)
                     self.registrar_log("Fechando a aba do PDF...")
                     driver.close()
                     
@@ -326,7 +317,6 @@ class DownloaderGUI:
             self.update_status(msg, "red")
             self.registrar_log(msg)
         except KeyError:
-            # --- ALTERAÇÃO AQUI: Mensagem de erro atualizada para a coluna 'PO' ---
             msg = "ERRO CRÍTICO: A coluna 'PO' não foi encontrada na sua planilha. Por favor, verifique o nome da coluna."
             self.update_status(msg, "red")
             self.registrar_log(msg)

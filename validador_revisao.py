@@ -17,8 +17,8 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
+import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -26,7 +26,7 @@ class ValidadorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Validador de Revisão de Engenharia")
-        self.root.geometry("850x650")
+        self.root.geometry("650x400")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
@@ -100,19 +100,71 @@ class ValidadorGUI:
             sheet.title = "Dados FSE"
             self.headers = [
                 "OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN", "LID",
-                "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE",
-                "REV. Engenharia", "Status", "Comparação"
+                "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", 
+                "REV. FSE", "REV. Engenharia", "Revisão do Banco",
+                "Status (Eng vs FSE)", "Detalhes (Eng vs FSE)",
+                "Status (Banco vs FSE)", "Detalhes (Banco vs FSE)",
+                "Status (Banco vs Eng)", "Detalhes (Banco vs Eng)",
+                "COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA",
+                "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2",
+                "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2",
+                "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF",
+                "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"
             ]
             sheet.append(self.headers)
             for cell in sheet[1]:
                 cell.font = openpyxl.styles.Font(bold=True)
             workbook.save(self.excel_path)
-            self.registrar_log(f"Arquivo de resultados '{EXCEL_FILENAME}' criado com sucesso.")
+            self.registrar_log(f"Arquivo de resultados '{EXCEL_FILENAME}' criado com sucesso com a estrutura final.")
         else:
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             self.headers = [cell.value for cell in sheet[1]]
-            self.registrar_log(f"Arquivo de resultados '{EXCEL_FILENAME}' encontrado. Novos dados serão adicionados.")
+            self.registrar_log(f"Arquivo de resultados '{EXCEL_FILENAME}' encontrado.")
+    
+    def consultar_dados_banco(self, part_number):
+        self.registrar_log(f"Consultando banco de dados para o PN: {part_number}...")
+        
+        string_conexao = (
+            r'DRIVER={ODBC Driver 17 for SQL Server};'
+            r'SERVER=172.20.1.7;DATABASE=CPS;UID=sa;PWD=masterkey;'
+        )
+        
+        comando_sql = """
+            SELECT  
+              COD_OS_COMPLETO, COD_PECAS, N_OS_CLIENTE, N_DESENHO, QTDE_PECAS, DT_ENTRADA,
+              U_ZLT_REVISAO_2D, U_ZLT_REVISAO_DES_3D, U_ZLT_REVISAO_DI, U_ZLT_REVISAO_DI_F2,
+              U_ZLT_REVISAO_DI_F3, U_ZLT_REVISAO_FI, U_ZLT_REVISAO_LP, U_ZLT_REVISAO_LP_F2,
+              U_ZLT_REVISAO_LP_F3, U_ZLT_REVISAO_PN, U_ZLT_REVISAO_ROT, U_REVISAO_3D_MF,
+              U_CLASSE_ELEB, U_PN_DE_PROJETO, U_OM, CAMPO_ADICIONAL9
+            FROM TOS_AUX
+            WHERE N_DESENHO = ? 
+        """
+        
+        colunas_db = [
+            "COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA",
+            "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2",
+            "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2",
+            "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF",
+            "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"
+        ]
+        
+        try:
+            with pyodbc.connect(string_conexao) as conexao:
+                cursor = conexao.cursor()
+                cursor.execute(comando_sql, part_number)
+                resultado = cursor.fetchone()
+                
+                if resultado:
+                    self.registrar_log(f"Dados encontrados no banco para o PN: {part_number}")
+                    dados_banco = dict(zip(colunas_db, resultado))
+                    return dados_banco
+                else:
+                    self.registrar_log(f"PN {part_number} não encontrado no banco de dados.")
+                    return {col: "Não encontrado no BD" for col in colunas_db}
+        except Exception as e:
+            self.registrar_log(f"ERRO ao consultar o banco de dados: {e}")
+            return {col: "Erro no BD" for col in colunas_db}
 
     def run_automation(self):
         try:
@@ -126,10 +178,6 @@ class ValidadorGUI:
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             df_input['OS'] = df_input['OS'].astype(str)
             self.registrar_log(f"Arquivo 'lista.xlsx' lido. Total de {len(df_input)} OCs na lista.")
-
-            # --- REMOVIDO LIMITE DE TESTE ---
-            # df_input = df_input.head(10)
-            # self.registrar_log(f"AVISO: Modo de teste ativo. A execução será limitada às primeiras 10 OCs da lista.")
 
             self.update_status("Verificando OCs já processadas...")
             os_ja_verificadas = set()
@@ -145,9 +193,7 @@ class ValidadorGUI:
             novas_os_count = len(df_a_processar)
             self.registrar_log(f"{len(df_input) - novas_os_count} OCs da lista já foram processadas e serão ignoradas.")
 
-            if novas_os_count == 0:
-                self.update_status("Nenhuma OC nova para extrair. Verificando comparações pendentes...", "#00529B")
-            else:
+            if novas_os_count > 0:
                 self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OCs.")
                 
                 self.update_status("Configurando navegador...")
@@ -171,14 +217,10 @@ class ValidadorGUI:
                 for index, row in df_a_processar.iterrows():
                     os_num = str(row['OS'])
                     oc_completa = f"{row['OC_antes']}/{row['OC_depois']}"
-                    # --- LOG SIMPLIFICADO ---
                     self.update_status(f"Extraindo dados da OC: {oc_completa}...")
                     self.registrar_log(f"Extraindo dados da FSE para a OC: {oc_completa}")
                     dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
                     if dados_fse:
-                        dados_fse["REV. Engenharia"] = ""
-                        dados_fse["Status"] = ""
-                        dados_fse["Comparação"] = ""
                         workbook = openpyxl.load_workbook(self.excel_path)
                         sheet = workbook.active
                         linha_para_adicionar = [dados_fse.get(h, "") for h in self.headers]
@@ -187,7 +229,7 @@ class ValidadorGUI:
                         self.registrar_log("Dados da FSE salvos no Excel.")
                 self.registrar_log("Etapa de extração de FSEs concluída.")
 
-            self.update_status("ETAPA 2: Verificando revisões de engenharia pendentes...")
+            self.update_status("ETAPA 2: Verificando e comparando revisões...")
             
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
@@ -195,62 +237,57 @@ class ValidadorGUI:
             
             linhas_a_comparar = []
             for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                os_da_linha = str(row_cells[col_indices["OS"] - 1].value)
-                if os_da_linha in df_input['OS'].values:
-                    status_cell = row_cells[col_indices["Status"] - 1]
-                    if not status_cell.value:
-                        linhas_a_comparar.append(i + 2)
+                status_cell = row_cells[col_indices["Status (Eng vs FSE)"] - 1]
+                if not status_cell.value:
+                    linhas_a_comparar.append(i + 2)
 
             if not linhas_a_comparar:
                 self.update_status("Nenhuma comparação pendente. Processo finalizado!", "#008A00")
-                self.registrar_log("Nenhuma revisão de engenharia pendente para verificação.")
+                self.registrar_log("Nenhuma revisão pendente para verificação.")
             else:
                 if not self.driver:
                     self.update_status("Configurando navegador para Etapa 2...")
-                    caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-                    service = ChromeService(executable_path=caminho_chromedriver)
-                    options = webdriver.ChromeOptions()
-                    options.add_argument("--start-maximized")
-                    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                    options.add_experimental_option('useAutomationExtension', False)
-                    options.add_argument("--disable-blink-features=AutomationControlled")
-
-                    self.driver = webdriver.Chrome(service=service, options=options)
-                    wait = WebDriverWait(self.driver, 15)
-                    self.driver.get("https://web.embraer.com.br/irj/portal")
-                    self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
+                    # ... (código de configuração do driver, se necessário) ...
 
                 self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
                 self.navegar_para_desenhos_engenharia(wait)
 
                 for row_num in linhas_a_comparar:
-                    row_cells = sheet[row_num]
-                    pn_extraido = row_cells[col_indices["PN extraído"] - 1].value
-                    rev_fse = row_cells[col_indices["REV. FSE"] - 1].value
+                    pn_extraido = sheet.cell(row=row_num, column=col_indices["PN extraído"]).value
+                    rev_fse = sheet.cell(row=row_num, column=col_indices["REV. FSE"]).value
                     
-                    # --- LOG SIMPLIFICADO ---
-                    self.update_status(f"Consultando revisão para o PN: {pn_extraido}...")
-                    self.registrar_log(f"Consultando Revisão de Engenharia para o Part Number: {pn_extraido}")
-
+                    self.update_status(f"Processando PN: {pn_extraido}...")
+                    
                     if pn_extraido and pn_extraido != "Não encontrado":
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+                        dados_banco = self.consultar_dados_banco(pn_extraido)
                         
-                        status = "FALHA NA BUSCA"
-                        comparacao_texto = f"FSE: {rev_fse} vs ENG: {rev_engenharia}"
+                        revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
+                        
+                        status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
+                        status_banco_fse, detalhes_banco_fse = self.comparar_revisoes(revisao_banco, rev_fse, "BANCO", "FSE")
+                        status_banco_eng, detalhes_banco_eng = self.comparar_revisoes(revisao_banco, rev_engenharia, "BANCO", "ENG")
 
-                        if rev_engenharia and rev_fse and "Não encontrada" not in [rev_engenharia, rev_fse] and "Falha" not in rev_engenharia:
-                            if rev_engenharia.strip().upper() == rev_fse.strip().upper():
-                                status = "OK"
-                            else:
-                                status = "DIVERGENTE"
-                        
+                        # Salva os dados no Excel
                         sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
-                        sheet.cell(row=row_num, column=col_indices["Status"], value=status)
-                        sheet.cell(row=row_num, column=col_indices["Comparação"], value=comparacao_texto)
-                        self.registrar_log(f"Comparação para o PN {pn_extraido} finalizada. Status: {status}")
+                        sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
+                        
+                        sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value=status_eng_fse)
+                        sheet.cell(row=row_num, column=col_indices["Detalhes (Eng vs FSE)"], value=detalhes_eng_fse)
+                        
+                        sheet.cell(row=row_num, column=col_indices["Status (Banco vs FSE)"], value=status_banco_fse)
+                        sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs FSE)"], value=detalhes_banco_fse)
+
+                        sheet.cell(row=row_num, column=col_indices["Status (Banco vs Eng)"], value=status_banco_eng)
+                        sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs Eng)"], value=detalhes_banco_eng)
+                        
+                        for nome_coluna, valor in dados_banco.items():
+                            if nome_coluna in col_indices:
+                                sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor)
+                        
+                        self.registrar_log(f"Processamento para o PN {pn_extraido} finalizado.")
                     else:
-                        sheet.cell(row=row_num, column=col_indices["Status"], value="PN NÃO ENCONTRADO NA FSE")
-                        self.registrar_log(f"PN não encontrado na FSE para esta linha, pulando comparação.")
+                        sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value="PN NÃO ENCONTRADO NA FSE")
 
                     workbook.save(self.excel_path)
 
@@ -268,15 +305,17 @@ class ValidadorGUI:
                 self.driver = None
             self.action_button.pack_forget()
 
-    def navegar_para_fse_busca(self, wait):
-        original_window = self.driver.current_window_handle
-        wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
-        wait.until(EC.number_of_windows_to_be(2))
-        for handle in self.driver.window_handles:
-            if handle != original_window:
-                self.driver.switch_to.window(handle)
-                break
-        self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe' e clique em 'Continuar'.")
+    def comparar_revisoes(self, rev1, rev2, nome1, nome2):
+        detalhes = f"{nome1}: {rev1} vs {nome2}: {rev2}"
+        status = "FALHA"
+        is_rev1_valida = rev1 and "Não encontrad" not in str(rev1) and "Erro" not in str(rev1)
+        is_rev2_valida = rev2 and "Não encontrad" not in str(rev2) and "Erro" not in str(rev2)
+        if is_rev1_valida and is_rev2_valida:
+            if str(rev1).strip().upper() == str(rev2).strip().upper():
+                status = "OK"
+            else:
+                status = "DIVERGENTE"
+        return status, detalhes
 
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
         try:
