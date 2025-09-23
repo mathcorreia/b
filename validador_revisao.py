@@ -17,8 +17,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
+# Biblioteca para conectar com SQL Server
 import pyodbc
 
+# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -357,7 +359,9 @@ class ValidadorGUI:
             dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
             
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[text()='NÚMERO DE SERIAÇÃO']/following-sibling::div//span")
+            
+            # --- SELETOR CORRIGIDO E MAIS ROBUSTO PARA NÚMERO DE SERIAÇÃO ---
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[1]/following-sibling::div[1]//span")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
             
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
@@ -451,18 +455,21 @@ class ValidadorGUI:
             return ""
 
     def tirar_print_de_erro(self, identificador, etapa):
+        # Revertido para salvar localmente, conforme solicitado
+        local_path = os.getcwd()
         identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", identificador)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        nome_screenshot = f"erro_{etapa}_{identificador_limpo}_{timestamp}.png"
-        screenshot_path = os.path.join(os.getcwd(), nome_screenshot)
+        nome_screenshot = f"erro_local_{etapa}_{identificador_limpo}_{timestamp}.png"
+        screenshot_path = os.path.join(local_path, nome_screenshot)
         try:
             if self.driver:
                 self.driver.save_screenshot(screenshot_path)
-                self.registrar_log(f"Um screenshot do erro foi salvo em: '{screenshot_path}'")
+                self.registrar_log(f"Um screenshot do erro foi salvo localmente em: '{screenshot_path}'")
         except Exception as e:
-            self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {e}")
+            self.registrar_log(f"FALHA AO SALVAR SCREENSHOT LOCALMENTE: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
     app = ValidadorGUI(root)
     root.mainloop()
+

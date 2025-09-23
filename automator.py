@@ -17,7 +17,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException
 
 DOWNLOAD_DIR = os.path.join(os.path.expanduser('~'), 'Downloads')
-PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - EmbraerProdutivo'
+PASTA_RAIZ_VERIFICACAO = r'\\fserver\cedoc_docs\Doc - Embraer Produtivo'
 LOG_FILENAME = 'log_automacao.txt'
 ERRO_LOG_FILENAME = 'log_erros.txt'
 
@@ -26,7 +26,7 @@ class AutomatorGUI:
         self.root = root
         self.root.title("Automator Embraer Produtivo - Painel de Controle")
         self.root.geometry("850x650")
-   
+    
         
         # Evento para sincronizar a thread de automação com as ações do usuário na GUI
         self.user_action_event = threading.Event()
@@ -125,12 +125,17 @@ class AutomatorGUI:
                 locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil')
 
             hoje = datetime.now()
-            nome_mes_atual = hoje.strftime("%B").capitalize()
-            num_mes_atual = hoje.month + 100
+            
+            meses_abrev_pt = {
+                "janeiro": "Jan", "fevereiro": "Fev", "março": "Mar", "abril": "Abr",
+                "maio": "Mai", "junho": "Jun", "julho": "Jul", "agosto": "Ago",
+                "setembro": "Set", "outubro": "Out", "novembro": "Nov", "dezembro": "Dez"
+            }
+            nome_mes_atual = hoje.strftime("%B").lower()
+            nome_mes_abrev = meses_abrev_pt.get(nome_mes_atual, "Err")
 
-            PASTA_ANO_ATUAL = os.path.join(PASTA_RAIZ_VERIFICACAO, str(hoje.year))
-            MES_ATUAL = f'{num_mes_atual} - {nome_mes_atual}'
-            PASTA_MES = os.path.join(PASTA_ANO_ATUAL, MES_ATUAL)
+            PASTA_MES_NOME = f"{hoje.strftime('%Y_%m')}-{nome_mes_abrev}"
+            PASTA_MES = os.path.join(PASTA_RAIZ_VERIFICACAO, PASTA_MES_NOME)
 
             pastas_destino = {
                 'LM': os.path.join(PASTA_MES, 'LM'),
@@ -147,22 +152,36 @@ class AutomatorGUI:
             df[['OC_antes', 'OC_depois']] = df.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             self.registrar_log(f"Arquivo Excel lido. Total de {len(df)} itens na lista.")
 
-            self.update_status("Verificando arquivos já existentes (até 2 anos)...")
+            # ### INÍCIO DA ALTERAÇÃO: LÓGICA DE VERIFICAÇÃO COM LIMITE DE 2 ANOS ###
+            self.update_status("Verificando arquivos já existentes (até 2 anos retroativos)...")
             arquivos_existentes = set()
+            padrao_pasta_mes = re.compile(r'^\d{4}_\d{2}-\w{3}$') # Padrão YYYY_MM-Mon
+            
+            # Define os anos a serem verificados: o ano atual e os dois anteriores.
+            anos_a_verificar = [str(ano) for ano in range(hoje.year, hoje.year - 3, -1)] # Ex: [ '2025', '2024', '2023' ]
+            self.registrar_log(f"Anos a serem verificados para arquivos existentes: {', '.join(anos_a_verificar)}")
+
             if os.path.exists(PASTA_RAIZ_VERIFICACAO):
-                anos_a_verificar = [str(ano) for ano in range(hoje.year, hoje.year - 3, -1)]
-                for ano in anos_a_verificar:
-                    caminho_ano = os.path.join(PASTA_RAIZ_VERIFICACAO, ano)
-                    if not os.path.isdir(caminho_ano): continue
-                    self.registrar_log(f"Verificando pasta do ano: {ano}...")
-                    for _, _, files in os.walk(caminho_ano):
-                        for nome_arquivo in files:
-                            if nome_arquivo.endswith(".pdf"):
-                                os_num = nome_arquivo.split('_')[0]
-                                if os_num.isdigit():
-                                    arquivos_existentes.add(f"{os_num}_LM.pdf")
-                                    arquivos_existentes.add(f"{os_num}_LP.pdf")
-                                    arquivos_existentes.add(f"{os_num}_FS.pdf")
+                self.registrar_log(f"Verificando pastas em: {PASTA_RAIZ_VERIFICACAO}...")
+                
+                for nome_pasta in os.listdir(PASTA_RAIZ_VERIFICACAO):
+                    caminho_pasta = os.path.join(PASTA_RAIZ_VERIFICACAO, nome_pasta)
+                    
+                    # Extrai o ano do nome da pasta (primeiros 4 caracteres)
+                    ano_da_pasta = nome_pasta[:4]
+
+                    # CONDIÇÃO ADICIONADA: Verifica se o ano da pasta está na lista de anos permitidos
+                    if os.path.isdir(caminho_pasta) and ano_da_pasta in anos_a_verificar and padrao_pasta_mes.match(nome_pasta):
+                        # Percorre a estrutura de subpastas (LM, LP, FS)
+                        for _, _, files in os.walk(caminho_pasta):
+                            for nome_arquivo in files:
+                                if nome_arquivo.endswith(".pdf"):
+                                    os_num = nome_arquivo.split('_')[0]
+                                    if os_num.isdigit():
+                                        arquivos_existentes.add(f"{os_num}_LM.pdf")
+                                        arquivos_existentes.add(f"{os_num}_LP.pdf")
+                                        arquivos_existentes.add(f"{os_num}_FS.pdf")
+            # ### FIM DA ALTERAÇÃO ###
             
             df['OS_str'] = df['OS'].astype(str)
             df['ja_existe_lm'] = df['OS_str'].apply(lambda x: f"{x}_LM.pdf" in arquivos_existentes)
@@ -350,4 +369,3 @@ if __name__ == "__main__":
     root = tk.Tk()
     app = AutomatorGUI(root)
     root.mainloop()
-
