@@ -19,7 +19,7 @@ from selenium.common.exceptions import TimeoutException
 
 # --- CONSTANTES E CONFIGURAÇÕES ---
 LOG_FILENAME = 'log_automacao_oc.log'
-INPUT_FILENAME = 'PO-ACK.xlsx'
+INPUT_FILENAME = 'PO-ACK.xls'
 
 # --- Seletores do Portal SAP ---
 PORTAL_URL = "https://web.embraer.com.br"
@@ -65,20 +65,9 @@ class DownloaderGUI:
         
         self.log_path = os.path.join(os.getcwd(), LOG_FILENAME)
         
-        try:
-            locale.setlocale(locale.LC_TIME, 'pt_BR.UTF-8')
-        except locale.Error:
-            pass
-
-        agora = datetime.now()
-        mes_num = agora.strftime('%m')
-        mes_nome = agora.strftime('%B').capitalize()
-        
-        # --- ALTERAÇÃO AQUI: Caminho da pasta de rede corrigido ---
-        caminho_base = r"\\fserver\po.embraer\Comercial\1OC's Embraer Produtivo 2025"
-        pasta_do_mes = f"{mes_num} - {mes_nome}"
-        
-        self.download_path = os.path.join(caminho_base, pasta_do_mes)
+        # --- ALTERAÇÃO AQUI: Define o caminho de download como um diretório fixo ---
+        self.download_path = r"\\fserver\po.embraer\Comercial\1OC's Embraer Produtivo 2025"
+        # --- FIM DA ALTERAÇÃO ---
 
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
@@ -114,13 +103,10 @@ class DownloaderGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state='disabled')
         
-        try:
-            if not os.path.exists(self.download_path):
-                os.makedirs(self.download_path)
-                self.registrar_log(f"Pasta criada com sucesso: {self.download_path}")
-        except Exception as e:
-            self.update_status(f"ERRO: Não foi possível criar a pasta de destino: {self.download_path}", "red")
-            self.registrar_log(f"ERRO CRÍTICO ao criar pasta de destino: {e}")
+        # Verifica se a pasta de destino existe, mas não a cria
+        if not os.path.exists(self.download_path):
+            self.update_status(f"ERRO: A pasta de destino não foi encontrada: {self.download_path}", "red")
+            self.registrar_log(f"ERRO CRÍTICO: Pasta de destino não existe. Verifique o caminho ou a conexão com a rede.")
             self.action_button.config(state='normal', text="Iniciar Automação")
             return
 
@@ -178,7 +164,7 @@ class DownloaderGUI:
 
             if pdf_novo:
                 arquivo_recente = os.path.join(self.download_path, pdf_novo[0])
-                novo_nome = os.path.join(self.download_path, f"OC_{oc_num}.pdf")
+                novo_nome = os.path.join(self.download_path, f"{oc_num}.pdf")
                 time.sleep(2)
 
                 try:
@@ -217,13 +203,18 @@ class DownloaderGUI:
             df_input = pd.read_excel(INPUT_FILENAME, dtype={'PO': str})
             self.registrar_log(f"Arquivo '{INPUT_FILENAME}' lido com {len(df_input)} POs.")
 
-            ocs_ja_baixadas = {f.replace('OC_', '').replace('.pdf', '') for f in os.listdir(self.download_path) if f.startswith('OC_') and f.endswith('.pdf')}
+            # --- ALTERAÇÃO AQUI: Verificação de duplicidade no diretório fixo ---
+            self.registrar_log(f"Verificando POs já baixadas em {self.download_path}...")
+            ocs_ja_baixadas = {f.replace('.pdf', '') for f in os.listdir(self.download_path) if f.lower().endswith('.pdf')}
+            self.registrar_log(f"{len(ocs_ja_baixadas)} POs encontradas no diretório.")
+            # --- FIM DA ALTERAÇÃO ---
+            
             df_a_processar = df_input[~df_input['PO'].isin(ocs_ja_baixadas)].copy()
             total_a_processar = len(df_a_processar)
 
             if total_a_processar == 0:
-                self.update_status(f"Todas as POs da lista já foram baixadas na pasta de {datetime.now().strftime('%B')}.", "#008A00")
-                self.registrar_log(f"Nenhuma nova PO para processar na pasta de {datetime.now().strftime('%B')}.")
+                self.update_status(f"Nenhuma nova PO para baixar. Todos os itens da planilha já existem na pasta de destino.", "#008A00")
+                self.registrar_log(f"Nenhuma nova PO para processar.")
                 return
 
             self.registrar_log(f"Encontradas {total_a_processar} novas POs para baixar.")
@@ -231,20 +222,12 @@ class DownloaderGUI:
             self.update_status("Navegando pelo menu do portal...")
             
             wait.until(EC.element_to_be_clickable(MENU_SUPRIMENTOS)).click()
-            self.registrar_log("Clicou no menu 'Suprimentos'.")
             time.sleep(3)
             wait.until(EC.element_to_be_clickable(MENU_ORDENS_COMPRA)).click()
-            self.registrar_log("Clicou em 'Ordens de Compra'.")
             wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
-            self.registrar_log("Clicou no submenu 'Todas'.")
             
-            self.registrar_log("Aguardando o iframe principal (contentAreaFrame)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
-            self.registrar_log("Entrou no iframe principal.")
-            
-            self.registrar_log("Aguardando o iframe aninhado (ivuFrm_page0ivu0)...")
             wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
-            self.registrar_log("Entrou no iframe aninhado com sucesso.")
             time.sleep(3)
 
             processadas_count = 0
@@ -276,21 +259,16 @@ class DownloaderGUI:
                     for handle in driver.window_handles:
                         if handle != aba_principal:
                             driver.switch_to.window(handle)
-                            self.registrar_log("Foco mudou para a aba do PDF.")
                             break
                     
                     self.esperar_download_concluir(oc, arquivos_antes_download)
-                    self.registrar_log("Fechando a aba do PDF...")
                     driver.close()
-                    
                     driver.switch_to.window(aba_principal)
-                    self.registrar_log("Foco retornou para a aba principal.")
                     
                     self.registrar_log("Resetando a tela para a próxima PO...")
                     driver.switch_to.default_content()
                     
                     wait.until(EC.element_to_be_clickable(MENU_TODAS)).click()
-                    self.registrar_log("Clicou em 'Todas' para resetar.")
 
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_CONTEUDO_PRINCIPAL))
                     wait.until(EC.frame_to_be_available_and_switch_to_it(IFRAME_ANINHADO))
