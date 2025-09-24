@@ -7,8 +7,8 @@ import re
 import traceback
 import tkinter as tk
 from tkinter import scrolledtext
-import pyodbc
 import threading
+import pyodbc
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -95,11 +95,11 @@ class ValidadorGUI:
 
     def setup_excel(self):
         if not os.path.exists(self.excel_path):
-            workbook = openpyxl.Workbook()
+            workbook = openpyxl.load_workbook()
             sheet = workbook.active
             sheet.title = "Dados FSE"
             self.headers = [
-                "OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN", "LID",
+                "OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN", "LID", "PLANTA",
                 "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", 
                 "REV. FSE", "REV. Engenharia", "Revisão do Banco",
                 "Status (Eng vs FSE)", "Detalhes (Eng vs FSE)",
@@ -173,7 +173,7 @@ class ValidadorGUI:
             self.setup_excel()
 
             self.update_status("Lendo lista de OCs...")
-            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
+            df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             df_input['OS'] = df_input['OS'].astype(str)
@@ -356,10 +356,14 @@ class ValidadorGUI:
             dados["REV. PN"] = pn_parts[1] if len(pn_parts) > 1 else ""
             dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
             
+            dados["PLANTA"] = self.safe_find_text(By.XPATH, "//*[normalize-space()='PLANTA']/parent::div/following-sibling::div").strip()
+
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[1]/following-sibling::div[1]//span")
-            dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text for el in seriacao_elements if el.text.strip()])
+            time.sleep(1) 
+            
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]")
+            dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()])
             
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
             dados["PN extraído"] = pn_extraido_match.group(1) if pn_extraido_match else "Não encontrado"
@@ -452,7 +456,6 @@ class ValidadorGUI:
             return ""
 
     def tirar_print_de_erro(self, identificador, etapa):
-        # Revertido para salvar localmente, conforme solicitado
         local_path = os.getcwd()
         identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
