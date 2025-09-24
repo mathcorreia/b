@@ -8,6 +8,7 @@ import traceback
 import tkinter as tk
 from tkinter import scrolledtext
 import threading
+import pyodbc
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -17,10 +18,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Biblioteca para conectar com SQL Server
 import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -97,7 +96,7 @@ class ValidadorGUI:
 
     def setup_excel(self):
         if not os.path.exists(self.excel_path):
-            workbook = openpyxl.Workbook() # Corrigido de load_workbook para Workbook
+            workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Dados FSE"
             self.headers = [
@@ -371,9 +370,9 @@ class ValidadorGUI:
 
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            time.sleep(2)
+            time.sleep(1)
             
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]")
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//b[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[contains(@class,'border-fse-form-dyn')]//div[contains(@class, 'ng-binding')]")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()])
             
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
@@ -435,7 +434,6 @@ class ValidadorGUI:
                 try:
                     WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'não foi encontrado')]")))
                     self.registrar_log(f"AVISO: PN {part_number} não encontrado no sistema de Engenharia.")
-                    # Clica no botão Voltar da tela de erro
                     voltar_erro_selectors = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', "//*[contains(@title, 'Voltar')]"]
                     self.find_and_click(wait, voltar_erro_selectors, "Botão Voltar (Tela de Erro)")
                     return "Não encontrado em ENG"
@@ -463,7 +461,7 @@ class ValidadorGUI:
             try:
                 voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
                 self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
-                self.driver.switch_to.default_content() # Garante que saiu dos iframes
+                self.driver.switch_to.default_content()
             except:
                  self.registrar_log("Não foi possível retornar à tela de busca. A automação pode precisar ser reiniciada.")
             return "Não encontrada"
