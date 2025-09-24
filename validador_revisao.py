@@ -7,6 +7,7 @@ import re
 import traceback
 import tkinter as tk
 from tkinter import scrolledtext
+import pyodbc
 import threading
 from datetime import datetime
 from selenium import webdriver
@@ -17,10 +18,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Biblioteca para conectar com SQL Server
-import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -28,7 +26,7 @@ class ValidadorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Validador de Revisão de Engenharia")
-        self.root.geometry("850x650")
+        self.root.geometry("500x400")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
