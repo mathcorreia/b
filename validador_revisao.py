@@ -367,25 +367,20 @@ class ValidadorGUI:
             dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
             
             dados["PLANTA"] = self.safe_find_text(By.XPATH, "//*[normalize-space()='PLANTA']/parent::div/following-sibling::div").strip()
+
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            time.sleep(1)
+            time.sleep(1) 
             
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//b[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[contains(@class,'border-fse-form-dyn')]//div[contains(@class, 'ng-binding')]")
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()])
             
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
             dados["PN extraído"] = pn_extraido_match.group(1) if pn_extraido_match else "Não encontrado"
             dados["REV. FSE"] = dados.get("REV. PN", "Não encontrada")
 
-            self.registrar_log("Retornando à tela de busca da FSE...")
-            botao_voltar = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Voltar')]")))
-            botao_voltar.click()
-            
-            wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
-            
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
             return dados
-            
         except Exception:
             self.registrar_log(f"ERRO: Falha ao extrair dados da FSE para a OC {oc_completa}.")
             self.tirar_print_de_erro(oc_completa, "extracao_FSE")
