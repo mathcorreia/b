@@ -8,7 +8,6 @@ import traceback
 import tkinter as tk
 from tkinter import scrolledtext
 import threading
-import pyodbc
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -18,7 +17,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
+# Biblioteca para conectar com SQL Server
+import pyodbc
 
+# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -26,7 +28,7 @@ class ValidadorGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Validador de Revisão de Engenharia")
-        self.root.geometry("500x400")
+        self.root.geometry("850x650")
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
@@ -95,7 +97,7 @@ class ValidadorGUI:
 
     def setup_excel(self):
         if not os.path.exists(self.excel_path):
-            workbook = openpyxl.load_workbook()
+            workbook = openpyxl.Workbook() # Corrigido de load_workbook para Workbook
             sheet = workbook.active
             sheet.title = "Dados FSE"
             self.headers = [
@@ -172,29 +174,29 @@ class ValidadorGUI:
             self.registrar_log("--- INÍCIO DA EXECUÇÃO ---")
             self.setup_excel()
 
-            self.update_status("Lendo lista de OCs...")
-            df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
+            self.update_status("Lendo lista de OCs a processar...")
+            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             df_input['OS'] = df_input['OS'].astype(str)
             self.registrar_log(f"Arquivo 'lista.xlsx' lido. Total de {len(df_input)} OCs na lista.")
 
-            self.update_status("Verificando OCs já processadas...")
-            os_ja_verificadas = set()
+            self.update_status("Etapa 1: Verificando novas OCs para extração...")
+            self.registrar_log("--- ETAPA 1: VERIFICANDO NOVAS OCs ---")
+            os_ja_extraidas = set()
             try:
                 df_existente = pd.read_excel(self.excel_path)
                 if 'OS' in df_existente.columns:
-                    os_ja_verificadas = set(df_existente['OS'].astype(str))
-                self.registrar_log(f"Encontradas {len(os_ja_verificadas)} OSs já processadas anteriormente.")
-            except Exception:
-                self.registrar_log("Nenhum arquivo de resultados anterior encontrado.")
-
-            df_a_processar = df_input[~df_input['OS'].isin(os_ja_verificadas)].copy()
+                    os_ja_extraidas = set(df_existente['OS'].astype(str))
+            except FileNotFoundError:
+                self.registrar_log("Arquivo de resultados ainda não existe. Todas as OCs serão processadas.")
+            
+            df_a_processar = df_input[~df_input['OS'].isin(os_ja_extraidas)].copy()
             novas_os_count = len(df_a_processar)
-            self.registrar_log(f"{len(df_input) - novas_os_count} OCs da lista já foram processadas e serão ignoradas.")
+            self.registrar_log(f"{len(df_input) - novas_os_count} OCs da lista já tiveram seus dados extraídos e serão ignoradas nesta etapa.")
 
             if novas_os_count > 0:
-                self.registrar_log(f"Iniciando extração de dados para {novas_os_count} novas OCs.")
+                self.registrar_log(f"Encontradas {novas_os_count} novas OCs. Iniciando extração de dados da FSE...")
                 
                 self.update_status("Configurando navegador...")
                 caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
@@ -204,16 +206,16 @@ class ValidadorGUI:
                 options.add_experimental_option("excludeSwitches", ["enable-automation"])
                 options.add_experimental_option('useAutomationExtension', False)
                 options.add_argument("--disable-blink-features=AutomationControlled")
-                
                 self.driver = webdriver.Chrome(service=service, options=options)
                 wait = WebDriverWait(self.driver, 15)
 
                 self.driver.get("https://web.embraer.com.br/irj/portal")
                 self.prompt_user_action("Por favor, faça o login no portal. A automação continuará após você clicar em 'Continuar'.")
 
-                self.update_status(f"ETAPA 1: Extraindo dados das Fichas Seguidoras (FSE)...")
+                self.update_status(f"Extraindo dados de {novas_os_count} Fichas Seguidoras (FSE)...")
                 self.navegar_para_fse_busca(wait)
                 
+                novas_linhas_dados = []
                 for index, row in df_a_processar.iterrows():
                     os_num = str(row['OS'])
                     oc_completa = f"{row['OC_antes']}/{row['OC_depois']}"
@@ -221,15 +223,25 @@ class ValidadorGUI:
                     self.registrar_log(f"Extraindo dados da FSE para a OC: {oc_completa}")
                     dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
                     if dados_fse:
-                        workbook = openpyxl.load_workbook(self.excel_path)
-                        sheet = workbook.active
-                        linha_para_adicionar = [dados_fse.get(h, "") for h in self.headers]
+                        novas_linhas_dados.append(dados_fse)
+                        self.registrar_log("Dados da FSE coletados.")
+                
+                if novas_linhas_dados:
+                    self.registrar_log(f"Salvando {len(novas_linhas_dados)} novas OCs no Excel...")
+                    workbook = openpyxl.load_workbook(self.excel_path)
+                    sheet = workbook.active
+                    for dados in novas_linhas_dados:
+                        linha_para_adicionar = [dados.get(h, "") for h in self.headers]
                         sheet.append(linha_para_adicionar)
-                        workbook.save(self.excel_path)
-                        self.registrar_log("Dados da FSE salvos no Excel.")
-                self.registrar_log("Etapa de extração de FSEs concluída.")
+                    workbook.save(self.excel_path)
+                    self.registrar_log("Novos dados salvos com sucesso.")
 
-            self.update_status("ETAPA 2: Verificando e comparando revisões...")
+                self.registrar_log("Etapa de extração de FSEs concluída.")
+            else:
+                self.registrar_log("Nenhuma OC nova para extrair.")
+
+            self.update_status("Etapa 2: Verificando e comparando revisões...")
+            self.registrar_log("--- ETAPA 2: VERIFICANDO COMPARAÇÕES PENDENTES ---")
             
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
@@ -245,6 +257,7 @@ class ValidadorGUI:
                 self.update_status("Nenhuma comparação pendente. Processo finalizado!", "#008A00")
                 self.registrar_log("Nenhuma revisão pendente para verificação.")
             else:
+                self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs com comparações pendentes.")
                 if not self.driver:
                     self.update_status("Configurando navegador para Etapa 2...")
                     caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
@@ -258,8 +271,8 @@ class ValidadorGUI:
                     wait = WebDriverWait(self.driver, 15)
                     self.driver.get("https://web.embraer.com.br/irj/portal")
                     self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
-
-                self.update_status(f"ETAPA 2: Comparando {len(linhas_a_comparar)} itens...")
+                    
+                self.update_status(f"Comparando {len(linhas_a_comparar)} itens...")
                 self.navegar_para_desenhos_engenharia(wait)
 
                 for row_num in linhas_a_comparar:
@@ -271,7 +284,6 @@ class ValidadorGUI:
                     if pn_extraido and pn_extraido != "Não encontrado":
                         rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
                         dados_banco = self.consultar_dados_banco(pn_extraido)
-                        
                         revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
                         
                         status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
@@ -280,13 +292,10 @@ class ValidadorGUI:
 
                         sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
                         sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
-                        
                         sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value=status_eng_fse)
                         sheet.cell(row=row_num, column=col_indices["Detalhes (Eng vs FSE)"], value=detalhes_eng_fse)
-                        
                         sheet.cell(row=row_num, column=col_indices["Status (Banco vs FSE)"], value=status_banco_fse)
                         sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs FSE)"], value=detalhes_banco_fse)
-
                         sheet.cell(row=row_num, column=col_indices["Status (Banco vs Eng)"], value=status_banco_eng)
                         sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs Eng)"], value=detalhes_banco_eng)
                         
@@ -298,7 +307,9 @@ class ValidadorGUI:
                     else:
                         sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value="PN NÃO ENCONTRADO NA FSE")
 
-                    workbook.save(self.excel_path)
+                self.registrar_log("Salvando todas as comparações no arquivo Excel...")
+                workbook.save(self.excel_path)
+                self.registrar_log("Arquivo salvo com sucesso.")
 
             self.update_status("Processo concluído com sucesso!", "#008A00")
             self.registrar_log("--- FIM DA EXECUÇÃO ---")
@@ -360,7 +371,7 @@ class ValidadorGUI:
 
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            time.sleep(1) 
+            time.sleep(2)
             
             seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()])
@@ -421,7 +432,15 @@ class ValidadorGUI:
 
             seletores_desenho = ['//*[@id="FOAH.Dplpl049View.cmdGBI"]']
             if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
-                raise TimeoutException("Não foi possível clicar no botão 'Desenho'.")
+                try:
+                    WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'não foi encontrado')]")))
+                    self.registrar_log(f"AVISO: PN {part_number} não encontrado no sistema de Engenharia.")
+                    # Clica no botão Voltar da tela de erro
+                    voltar_erro_selectors = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', "//*[contains(@title, 'Voltar')]"]
+                    self.find_and_click(wait, voltar_erro_selectors, "Botão Voltar (Tela de Erro)")
+                    return "Não encontrado em ENG"
+                except TimeoutException:
+                    raise TimeoutException("Não foi possível clicar no botão 'Desenho' nem encontrar mensagem de erro.")
 
             seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
             rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
@@ -439,8 +458,14 @@ class ValidadorGUI:
             return revisao
 
         except TimeoutException as e_timeout:
-            self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. (Timeout: {e_timeout})")
+            self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. Tentando voltar para a tela de busca.")
             self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
+            try:
+                voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
+                self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
+                self.driver.switch_to.default_content() # Garante que saiu dos iframes
+            except:
+                 self.registrar_log("Não foi possível retornar à tela de busca. A automação pode precisar ser reiniciada.")
             return "Não encontrada"
         except Exception:
             self.registrar_log(f"ERRO: Falha inesperada ao buscar revisão para o PN {part_number}.")
