@@ -174,7 +174,7 @@ class ValidadorGUI:
             self.setup_excel()
 
             self.update_status("Lendo lista de OCs a processar...")
-            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
+            df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             df_input['OS'] = df_input['OS'].astype(str)
