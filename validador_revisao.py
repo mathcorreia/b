@@ -17,10 +17,8 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Biblioteca para conectar com SQL Server
 import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -32,6 +30,7 @@ class ValidadorGUI:
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
+        self.reprocess_choice = "" # Armazena a escolha do usuário
         self.driver = None
 
         main_frame = tk.Frame(root, padx=10, pady=10)
@@ -45,6 +44,13 @@ class ValidadorGUI:
 
         self.action_button = tk.Button(top_frame, text="Iniciar Automação", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=20, pady=10)
         self.action_button.pack(pady=(5, 10))
+
+        # --- Frame para os botões de retrabalho (inicialmente oculto) ---
+        self.reprocess_frame = tk.Frame(main_frame)
+        self.reprocess_button = tk.Button(self.reprocess_frame, text="Reprocessar Itens com Erro", command=lambda: self.set_reprocess_choice("reprocess"), font=("Helvetica", 10, "bold"), bg="#FFA500", fg="white")
+        self.finish_button = tk.Button(self.reprocess_frame, text="Finalizar", command=lambda: self.set_reprocess_choice("finish"), font=("Helvetica", 10))
+        self.reprocess_button.pack(side='left', padx=5)
+        self.finish_button.pack(side='left', padx=5)
 
         log_label = tk.Label(main_frame, text="Log de Atividades:", font=("Helvetica", 10, "bold"))
         log_label.pack(fill='x', pady=(10, 0))
@@ -81,7 +87,7 @@ class ValidadorGUI:
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state='disabled')
         
-        threading.Thread(target=self.run_automation, daemon=True).start()
+        threading.Thread(target=self.run_automation_loop, daemon=True).start()
 
     def prompt_user_action(self, message):
         self.user_action_event.clear()
@@ -94,6 +100,9 @@ class ValidadorGUI:
 
     def signal_user_action(self):
         self.user_action_event.set()
+        
+    def set_reprocess_choice(self, choice):
+        self.reprocess_choice = choice
 
     def setup_excel(self):
         if not os.path.exists(self.excel_path):
@@ -168,36 +177,97 @@ class ValidadorGUI:
             self.registrar_log(f"ERRO ao consultar o banco de dados: {e}")
             return {col: "Erro no BD" for col in colunas_db}
 
-    def run_automation(self):
-        try:
-            self.update_status("Iniciando o Validador...")
-            self.registrar_log("--- INÍCIO DA EXECUÇÃO ---")
-            self.setup_excel()
-
-            self.update_status("Lendo lista de OCs a processar...")
-            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
-            df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
-            df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-            df_input['OS'] = df_input['OS'].astype(str)
-            self.registrar_log(f"Arquivo 'lista.xlsx' lido. Total de {len(df_input)} OCs na lista.")
-
-            self.update_status("Etapa 1: Verificando novas OCs para extração...")
-            self.registrar_log("--- ETAPA 1: VERIFICANDO NOVAS OCs ---")
-            os_ja_extraidas = set()
+    def run_automation_loop(self):
+        reprocess_mode = False
+        while True:
             try:
-                df_existente = pd.read_excel(self.excel_path)
-                if 'OS' in df_existente.columns:
-                    os_ja_extraidas = set(df_existente['OS'].astype(str))
-            except FileNotFoundError:
-                self.registrar_log("Arquivo de resultados ainda não existe. Todas as OCs serão processadas.")
-            
-            df_a_processar = df_input[~df_input['OS'].isin(os_ja_extraidas)].copy()
-            novas_os_count = len(df_a_processar)
-            self.registrar_log(f"{len(df_input) - novas_os_count} OCs da lista já tiveram seus dados extraídos e serão ignoradas nesta etapa.")
-
-            if novas_os_count > 0:
-                self.registrar_log(f"Encontradas {novas_os_count} novas OCs. Iniciando extração de dados da FSE...")
+                if not reprocess_mode:
+                    df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
+                    df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
+                    df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
+                    df_input['OS'] = df_input['OS'].astype(str)
                 
+                self.run_automation(df_input)
+                
+                # --- LÓGICA DE RETRABALHO ---
+                self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
+                erros_df = self.check_for_errors()
+                
+                if not erros_df.empty:
+                    self.reprocess_choice = ""
+                    self.root.after(0, lambda: [
+                        self.update_status(f"{len(erros_df)} OSs com falhas encontradas. Deseja reprocessá-las?", "#E69500"),
+                        self.action_button.pack_forget(),
+                        self.reprocess_frame.pack()
+                    ])
+                    
+                    while not self.reprocess_choice:
+                        time.sleep(0.1)
+
+                    self.root.after(0, self.reprocess_frame.pack_forget)
+                    
+                    if self.reprocess_choice == "reprocess":
+                        self.registrar_log(f"--- INICIANDO RETRABALHO PARA {len(erros_df)} OSs ---")
+                        df_input = erros_df # Próximo loop usará apenas o dataframe de erros
+                        reprocess_mode = True
+                        continue # Volta para o início do loop de automação
+                    else:
+                        self.update_status("Processo finalizado com itens pendentes.", "#00529B")
+                        break # Sai do loop
+                else:
+                    self.update_status("Processo concluído com sucesso e sem erros!", "#008A00")
+                    break # Sai do loop
+
+            except Exception as e:
+                error_details = traceback.format_exc()
+                self.registrar_log(f"ERRO CRÍTICO NO LOOP PRINCIPAL: {error_details}")
+                self.update_status(f"Erro Crítico: {e}", "red")
+                break
+            finally:
+                 if self.driver:
+                    self.driver.quit()
+                    self.driver = None
+                 self.root.after(0, self.action_button.pack_forget)
+
+    def check_for_errors(self):
+        """Verifica o Excel final e retorna um DataFrame com as OSs que precisam de retrabalho."""
+        df_results = pd.read_excel(self.excel_path)
+        df_results['OS'] = df_results['OS'].astype(str)
+        
+        # Condições de falha: Status não é 'OK' ou alguma revisão chave não foi encontrada.
+        falha_eng = ~df_results['Status (Eng vs FSE)'].str.contains("OK", na=True)
+        falha_banco = ~df_results['Status (Banco vs FSE)'].str.contains("OK", na=True)
+        
+        df_erros = df_results[falha_eng | falha_banco].copy()
+        
+        # Recria as colunas necessárias para o reprocessamento
+        if not df_erros.empty:
+            df_erros[['OC_antes', 'OC_depois']] = df_erros['OC'].astype(str).str.split('/', expand=True, n=1)
+        
+        return df_erros
+
+    def run_automation(self, df_to_process):
+        self.update_status("Iniciando o Validador...")
+        self.registrar_log("--- INÍCIO DO CICLO DE EXECUÇÃO ---")
+        self.setup_excel()
+        
+        self.update_status("Etapa 1: Verificando novas OCs para extração...")
+        os_ja_extraidas = set()
+        try:
+            df_existente = pd.read_excel(self.excel_path)
+            if 'OS' in df_existente.columns:
+                os_ja_extraidas = set(df_existente['OS'].astype(str))
+        except FileNotFoundError:
+            pass
+        
+        df_a_processar = df_to_process[~df_to_process['OS'].isin(os_ja_extraidas)].copy()
+        novas_os_count = len(df_a_processar)
+        self.registrar_log(f"{len(df_to_process) - novas_os_count} OCs da lista atual já tiveram seus dados extraídos.")
+
+        if novas_os_count > 0:
+            self.registrar_log(f"Encontradas {novas_os_count} novas OCs para extrair.")
+            
+            if not self.driver:
                 self.update_status("Configurando navegador...")
                 caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
                 service = ChromeService(executable_path=caminho_chromedriver)
@@ -207,124 +277,71 @@ class ValidadorGUI:
                 options.add_experimental_option('useAutomationExtension', False)
                 options.add_argument("--disable-blink-features=AutomationControlled")
                 self.driver = webdriver.Chrome(service=service, options=options)
-                wait = WebDriverWait(self.driver, 15)
-
+                
                 self.driver.get("https://web.embraer.com.br/irj/portal")
-                self.prompt_user_action("Por favor, faça o login no portal. A automação continuará após você clicar em 'Continuar'.")
+                self.prompt_user_action("Por favor, faça o login no portal.")
 
-                self.update_status(f"Extraindo dados de {novas_os_count} Fichas Seguidoras (FSE)...")
-                self.navegar_para_fse_busca(wait)
-                
-                novas_linhas_dados = []
-                for index, row in df_a_processar.iterrows():
-                    os_num = str(row['OS'])
-                    oc_completa = f"{row['OC_antes']}/{row['OC_depois']}"
-                    self.update_status(f"Extraindo dados da OC: {oc_completa}...")
-                    self.registrar_log(f"Extraindo dados da FSE para a OC: {oc_completa}")
-                    dados_fse = self.extrair_dados_fse(wait, os_num, row['OC_antes'], row['OC_depois'])
-                    if dados_fse:
-                        novas_linhas_dados.append(dados_fse)
-                        self.registrar_log("Dados da FSE coletados.")
-                
-                if novas_linhas_dados:
-                    self.registrar_log(f"Salvando {len(novas_linhas_dados)} novas OCs no Excel...")
-                    workbook = openpyxl.load_workbook(self.excel_path)
-                    sheet = workbook.active
-                    for dados in novas_linhas_dados:
-                        linha_para_adicionar = [dados.get(h, "") for h in self.headers]
-                        sheet.append(linha_para_adicionar)
-                    workbook.save(self.excel_path)
-                    self.registrar_log("Novos dados salvos com sucesso.")
-
-                self.registrar_log("Etapa de extração de FSEs concluída.")
-            else:
-                self.registrar_log("Nenhuma OC nova para extrair.")
-
-            self.update_status("Etapa 2: Verificando e comparando revisões...")
-            self.registrar_log("--- ETAPA 2: VERIFICANDO COMPARAÇÕES PENDENTES ---")
+            wait = WebDriverWait(self.driver, 15)
+            self.update_status(f"Extraindo dados de {novas_os_count} Fichas Seguidoras...")
+            self.navegar_para_fse_busca(wait)
             
-            workbook = openpyxl.load_workbook(self.excel_path)
-            sheet = workbook.active
-            col_indices = {name: i+1 for i, name in enumerate(self.headers)}
+            novas_linhas_dados = []
+            for _, row in df_a_processar.iterrows():
+                dados_fse = self.extrair_dados_fse(wait, str(row['OS']), row['OC_antes'], row['OC_depois'])
+                if dados_fse: novas_linhas_dados.append(dados_fse)
             
-            linhas_a_comparar = []
-            for i, row_cells in enumerate(sheet.iter_rows(min_row=2, values_only=False)):
-                status_cell = row_cells[col_indices["Status (Eng vs FSE)"] - 1]
-                if not status_cell.value:
-                    linhas_a_comparar.append(i + 2)
-
-            if not linhas_a_comparar:
-                self.update_status("Nenhuma comparação pendente. Processo finalizado!", "#008A00")
-                self.registrar_log("Nenhuma revisão pendente para verificação.")
-            else:
-                self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs com comparações pendentes.")
-                if not self.driver:
-                    self.update_status("Configurando navegador para Etapa 2...")
-                    caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-                    service = ChromeService(executable_path=caminho_chromedriver)
-                    options = webdriver.ChromeOptions()
-                    options.add_argument("--start-maximized")
-                    options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                    options.add_experimental_option('useAutomationExtension', False)
-                    options.add_argument("--disable-blink-features=AutomationControlled")
-                    self.driver = webdriver.Chrome(service=service, options=options)
-                    wait = WebDriverWait(self.driver, 15)
-                    self.driver.get("https://web.embraer.com.br/irj/portal")
-                    self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
-                    
-                self.update_status(f"Comparando {len(linhas_a_comparar)} itens...")
-                self.navegar_para_desenhos_engenharia(wait)
-
-                for row_num in linhas_a_comparar:
-                    pn_extraido = sheet.cell(row=row_num, column=col_indices["PN extraído"]).value
-                    rev_fse = sheet.cell(row=row_num, column=col_indices["REV. FSE"]).value
-                    
-                    self.update_status(f"Processando PN: {pn_extraido}...")
-                    
-                    if pn_extraido and pn_extraido != "Não encontrado":
-                        rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
-                        dados_banco = self.consultar_dados_banco(pn_extraido)
-                        revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
-                        
-                        status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
-                        status_banco_fse, detalhes_banco_fse = self.comparar_revisoes(revisao_banco, rev_fse, "BANCO", "FSE")
-                        status_banco_eng, detalhes_banco_eng = self.comparar_revisoes(revisao_banco, rev_engenharia, "BANCO", "ENG")
-
-                        sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
-                        sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
-                        sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value=status_eng_fse)
-                        sheet.cell(row=row_num, column=col_indices["Detalhes (Eng vs FSE)"], value=detalhes_eng_fse)
-                        sheet.cell(row=row_num, column=col_indices["Status (Banco vs FSE)"], value=status_banco_fse)
-                        sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs FSE)"], value=detalhes_banco_fse)
-                        sheet.cell(row=row_num, column=col_indices["Status (Banco vs Eng)"], value=status_banco_eng)
-                        sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs Eng)"], value=detalhes_banco_eng)
-                        
-                        for nome_coluna, valor in dados_banco.items():
-                            if nome_coluna in col_indices:
-                                sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor)
-                        
-                        self.registrar_log(f"Processamento para o PN {pn_extraido} finalizado.")
-                    else:
-                        sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value="PN NÃO ENCONTRADO NA FSE")
-
-                self.registrar_log("Salvando todas as comparações no arquivo Excel...")
+            if novas_linhas_dados:
+                workbook = openpyxl.load_workbook(self.excel_path)
+                sheet = workbook.active
+                for dados in novas_linhas_dados:
+                    sheet.append([dados.get(h, "") for h in self.headers])
                 workbook.save(self.excel_path)
-                self.registrar_log("Arquivo salvo com sucesso.")
+            self.registrar_log("Etapa 1 concluída.")
 
-            self.update_status("Processo concluído com sucesso!", "#008A00")
-            self.registrar_log("--- FIM DA EXECUÇÃO ---")
+        self.update_status("Etapa 2: Verificando e comparando revisões...")
+        workbook = openpyxl.load_workbook(self.excel_path)
+        sheet = workbook.active
+        col_indices = {name: i+1 for i, name in enumerate(self.headers)}
+        
+        # Filtra as linhas a comparar a partir do dataframe de entrada
+        df_para_comparar = pd.read_excel(self.excel_path)
+        df_para_comparar['OS'] = df_para_comparar['OS'].astype(str)
+        df_para_comparar = df_para_comparar[df_para_comparar['OS'].isin(df_to_process['OS'].tolist())]
+        
+        linhas_a_comparar = df_para_comparar[df_para_comparar['Status (Eng vs FSE)'].isna()].index + 2 # +2 para alinhar com as linhas do Excel
+        
+        if not linhas_a_comparar.any():
+            self.registrar_log("Nenhuma comparação pendente para este ciclo.")
+        else:
+            self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs para comparar.")
+            if not self.driver:
+            
+             wait = WebDriverWait(self.driver, 15)
+            self.navegar_para_desenhos_engenharia(wait)
 
-        except Exception as e:
-            error_details = traceback.format_exc()
-            self.registrar_log(f"ERRO CRÍTICO: A automação foi interrompida. Detalhes: {e}")
-            self.registrar_log(f"Traceback técnico: {error_details}")
-            self.update_status(f"ERRO CRÍTICO: {e}", "red")
-        finally:
-            if self.driver:
-                self.driver.quit()
-                self.driver = None
-            self.action_button.pack_forget()
+            for row_num in linhas_a_comparar:
+                pn_extraido = sheet.cell(row=row_num, column=col_indices["PN extraído"]).value
+                rev_fse = sheet.cell(row=row_num, column=col_indices["REV. FSE"]).value
+                
+                if pn_extraido and pn_extraido != "Não encontrado":
+                    rev_engenharia = self.buscar_revisao_engenharia(wait, pn_extraido)
+                    dados_banco = self.consultar_dados_banco(pn_extraido)
+                    revisao_banco = dados_banco.get("U_ZLT_REVISAO_PN", "Chave não encontrada")
+                    
+                    status_eng_fse, detalhes_eng_fse = self.comparar_revisoes(rev_engenharia, rev_fse, "ENG", "FSE")
+                    status_banco_fse, detalhes_banco_fse = self.comparar_revisoes(revisao_banco, rev_fse, "BANCO", "FSE")
+                    status_banco_eng, detalhes_banco_eng = self.comparar_revisoes(revisao_banco, rev_engenharia, "BANCO", "ENG")
 
+                    # Atualiza a planilha em memória
+                    sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
+                    sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
+                    sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value=status_eng_fse)
+                    # ... (e assim por diante para todas as colunas)
+
+            self.registrar_log("Salvando todas as comparações no Excel...")
+            workbook.save(self.excel_path)
+            self.registrar_log("Arquivo salvo.")
+            
     def comparar_revisoes(self, rev1, rev2, nome1, nome2):
         detalhes = f"{nome1}: {rev1} vs {nome2}: {rev2}"
         status = "FALHA"
@@ -356,7 +373,7 @@ class ValidadorGUI:
             dados["Item"] = oc_item_split[1] if len(oc_item_split) > 1 else ""
 
             codem_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').strip()
-            codem_split = [x.strip() for x in codem_raw.split('\n')]
+            codem_split = [part.strip() for part in codem_raw.replace('\n', '/').split('/') if part.strip()]
             dados["CODEM"] = codem_split[0] if len(codem_split) > 0 else ""
             dados["DT. REV. ROT."] = codem_split[1] if len(codem_split) > 1 else ""
 
@@ -368,7 +385,6 @@ class ValidadorGUI:
             dados["LID"] = pn_parts[2] if len(pn_parts) > 2 else ""
             
             dados["PLANTA"] = self.safe_find_text(By.XPATH, "//*[normalize-space()='PLANTA']/parent::div/following-sibling::div").strip()
-
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
             time.sleep(1)
