@@ -183,13 +183,16 @@ class ValidadorGUI:
         while True:
             try:
                 if not reprocess_mode:
-                    df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
+                    # Lê a planilha de entrada apenas na primeira execução
+                    df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
                     df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
                     df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
                     df_input['OS'] = df_input['OS'].astype(str)
                 
-                self.run_automation(df_input)
+                # Executa o ciclo principal de automação
+                self.run_automation_cycle(df_input)
                 
+                # Após o ciclo, verifica se há erros para reprocessar
                 self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
                 erros_df = self.check_for_errors()
                 
@@ -208,12 +211,23 @@ class ValidadorGUI:
                     
                     if self.reprocess_choice == "reprocess":
                         self.registrar_log(f"--- INICIANDO RETRABALHO PARA {len(erros_df)} OSs ---")
-                        df_input = erros_df
+                        df_input = erros_df # O próximo loop usará apenas o dataframe de erros
                         reprocess_mode = True
-                        continue
+                        # Limpa as colunas de status para forçar a re-comparação
+                        workbook = openpyxl.load_workbook(self.excel_path)
+                        sheet = workbook.active
+                        col_indices = {name: i + 1 for i, name in enumerate(self.headers)}
+                        for index, row in erros_df.iterrows():
+                             # Encontra a linha no Excel pelo número da OS
+                            for row_idx in range(2, sheet.max_row + 1):
+                                if str(sheet.cell(row=row_idx, column=1).value) == str(row['OS']):
+                                    sheet.cell(row=row_idx, column=col_indices["Status (Eng vs FSE)"], value=None)
+                                    break
+                        workbook.save(self.excel_path)
+                        continue # Volta para o início do loop de automação
                     else:
                         self.update_status("Processo finalizado com itens pendentes.", "#00529B")
-                        break
+                        break # Sai do loop
                 else:
                     self.update_status("Processo concluído com sucesso e sem erros!", "#008A00")
                     break
@@ -244,7 +258,7 @@ class ValidadorGUI:
         
         return df_erros
 
-    def run_automation(self, df_to_process):
+    def run_automation_cycle(self, df_to_process):
         self.registrar_log("--- INÍCIO DO CICLO DE EXECUÇÃO ---")
         self.setup_excel()
         
@@ -310,9 +324,20 @@ class ValidadorGUI:
         else:
             self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs para comparar.")
             if not self.driver:
-                # ... (configura driver se não estiver ativo)
-            
-             wait = WebDriverWait(self.driver, 15)
+                self.update_status("Configurando navegador para Etapa 2...")
+                caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                service = ChromeService(executable_path=caminho_chromedriver)
+                options = webdriver.ChromeOptions()
+                options.add_argument("--start-maximized")
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option('useAutomationExtension', False)
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                self.driver = webdriver.Chrome(service=service, options=options)
+                wait = WebDriverWait(self.driver, 15)
+                self.driver.get("https://web.embraer.com.br/irj/portal")
+                self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
+
+            wait = WebDriverWait(self.driver, 15)
             self.navegar_para_desenhos_engenharia(wait)
 
             for row_num in linhas_a_comparar:
@@ -346,7 +371,7 @@ class ValidadorGUI:
             self.registrar_log("Salvando todas as comparações no arquivo Excel...")
             workbook.save(self.excel_path)
             self.registrar_log("Arquivo salvo.")
-            
+
     def comparar_revisoes(self, rev1, rev2, nome1, nome2):
         detalhes = f"{nome1}: {rev1} vs {nome2}: {rev2}"
         status = "FALHA"
@@ -362,6 +387,9 @@ class ValidadorGUI:
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
         try:
             oc_completa = f"{oc1}/{oc2}"
+            self.update_status(f"Extraindo dados da OC: {oc_completa}...")
+            self.registrar_log(f"Extraindo dados da FSE para a OC: {oc_completa}")
+            
             wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']"))).clear()
             self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderNumber']").send_keys(oc1)
             wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']"))).clear()
@@ -409,7 +437,10 @@ class ValidadorGUI:
         except Exception:
             self.registrar_log(f"ERRO: Falha ao extrair dados da FSE para a OC {oc_completa}.")
             self.tirar_print_de_erro(oc_completa, "extracao_FSE")
+            # Tenta se recuperar retornando à página de busca
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
+            # Aguarda a página recarregar antes de continuar
+            wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
             return None
     
     def navegar_para_fse_busca(self, wait):
@@ -455,46 +486,36 @@ class ValidadorGUI:
             time.sleep(0.5)
 
             seletores_desenho = ['//*[@id="FOAH.Dplpl049View.cmdGBI"]']
-            if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
-                # Se não encontrar a revisão, tenta encontrar uma mensagem de erro
-                try:
-                    WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'não foi encontrado')]")))
-                    self.registrar_log(f"AVISO: PN {part_number} não encontrado no sistema de Engenharia.")
-                    # Clica no botão Voltar da tela de erro
-                    voltar_erro_selectors = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', "//*[contains(@title, 'Voltar')]"]
-                    self.find_and_click(wait, voltar_erro_selectors, "Botão Voltar (Tela de Erro)")
-                    return "Não encontrado em ENG"
-                except TimeoutException:
-                    raise TimeoutException("Não foi possível clicar no botão 'Desenho' nem encontrar mensagem de erro.")
+            self.find_and_click(wait, seletores_desenho, "Botão Desenho")
 
-            seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
-            rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
-            
-            revisao_raw = rev_element.text
-            revisao = revisao_raw.strip()
-            
-            self.registrar_log(f"Revisão de Engenharia encontrada: {revisao}")
-            
-            seletores_voltar = ['//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]']
-            if not self.find_and_click(wait, seletores_voltar, "Botão Voltar"):
-                raise TimeoutException("Não foi possível clicar no botão 'Voltar'.")
+            # Lógica de recuperação rápida de erro
+            try:
+                seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
+                rev_element = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
+                revisao = rev_element.text.strip()
+                self.registrar_log(f"Revisão de Engenharia encontrada: {revisao}")
+                
+                seletores_voltar = ['//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]']
+                self.find_and_click(wait, seletores_voltar, "Botão Voltar")
+                
+            except TimeoutException:
+                self.registrar_log(f"AVISO: PN {part_number} não encontrado no sistema de Engenharia.")
+                self.tirar_print_de_erro(part_number, "busca_revisao_nao_encontrado")
+                voltar_erro_selectors = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', "//*[contains(@title, 'Voltar')]"]
+                self.find_and_click(wait, voltar_erro_selectors, "Botão Voltar (Tela de Erro)")
+                return "Não encontrado em ENG"
 
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             return revisao
 
-        except TimeoutException:
-            self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. Tentando voltar para a tela de busca.")
-            self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
-            try:
-                # Tenta clicar em qualquer botão de 'Voltar' genérico para não travar o loop
-                voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
-                self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
-            except:
-                 self.registrar_log("Não foi possível retornar à tela de busca. A automação pode precisar ser reiniciada.")
-            return "Não encontrada"
         except Exception:
             self.registrar_log(f"ERRO: Falha inesperada ao buscar revisão para o PN {part_number}.")
             self.tirar_print_de_erro(part_number, "busca_revisao_erro")
+            try:
+                voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
+                self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
+            except:
+                 self.registrar_log("Não foi possível retornar à tela de busca.")
             return "Falha na busca"
         finally:
             self.driver.switch_to.default_content()
@@ -508,7 +529,7 @@ class ValidadorGUI:
     def tirar_print_de_erro(self, identificador, etapa):
         local_path = os.getcwd()
         identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
-        timestamp = datetime.now().strftime("%Ym%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         nome_screenshot = f"erro_local_{etapa}_{identificador_limpo}_{timestamp}.png"
         screenshot_path = os.path.join(local_path, nome_screenshot)
         try:
