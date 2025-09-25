@@ -440,38 +440,53 @@ class ValidadorGUI:
         self.registrar_log(f"AVISO: Não foi possível clicar no elemento '{description}'.")
         return False
 
-    def buscar_revisao_engenharia(self, wait, part_number):
-        # (Função sem alterações)
+def buscar_revisao_engenharia(self, wait, part_number):
+    try:
+        if not part_number or part_number == "Não encontrado":
+            return "PN não fornecido"
+
+        self.driver.switch_to.default_content()
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
+        wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
+
+        campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+        campo_pn.clear()
+        campo_pn.send_keys(part_number)
+        self.registrar_log(f"Buscando revisão de engenharia para o PN: {part_number}")
+        
+        self.find_and_click(wait, ['//*[@id="FOAH.Dplpl049View.cmdGBI"]'], "Botão Desenho")
+
+        
+        seletores_voltar_universal = [
+            '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]',  
+            '//*[@id="FOAH.Dplpl049View.cmdVoltar"]',        
+            "//div[contains(@ct, 'B') and .//span[normalize-space()='Voltar']]" 
+        ]
+
         try:
-            if not part_number or part_number == "Não encontrado": return "PN não fornecido"
-            self.driver.switch_to.default_content()
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.ID, "contentAreaFrame")))
-            wait.until(EC.frame_to_be_available_and_switch_to_it((By.XPATH, "//iframe[starts-with(@id, 'ivuFrm_')]")))
-            campo_pn = wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
-            campo_pn.clear(); campo_pn.send_keys(part_number)
-            self.registrar_log(f"Buscando pelo PN: {part_number}")
-            time.sleep(0.5)
-            self.find_and_click(wait, ['//*[@id="FOAH.Dplpl049View.cmdGBI"]'], "Botão Desenho")
             seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
-            rev_element = wait.until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
+            rev_element = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
             revisao = rev_element.text.strip()
             self.registrar_log(f"Revisão de Engenharia encontrada: {revisao}")
-            self.find_and_click(wait, ['//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]'], "Botão Voltar")
-            wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
+            
+            self.find_and_click(wait, seletores_voltar_universal, "Botão Voltar (Sucesso)")
             return revisao
+            
         except TimeoutException:
-            self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. (Timeout)")
-            self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
-            return "Não encontrada"
-        except Exception:
-            self.registrar_log(f"ERRO: Falha inesperada ao buscar revisão para o PN {part_number}.")
-            self.tirar_print_de_erro(part_number, "busca_revisao_erro")
-            return "Falha na busca"
-        finally:
-            self.driver.switch_to.default_content()
+            self.registrar_log(f"AVISO: PN {part_number} não foi encontrado no sistema de Engenharia.")
+            self.tirar_print_de_erro(part_number, "busca_revisao_nao_encontrado")
+            
+            self.find_and_click(wait, seletores_voltar_universal, "Botão Voltar (Tela de Erro)")
+            return "Não encontrado em ENG"
+
+    except Exception:
+        self.registrar_log(f"ERRO inesperado ao buscar revisão para PN {part_number}: {traceback.format_exc()}")
+        self.tirar_print_de_erro(part_number, "busca_revisao_erro_inesperado")
+        return "Falha na busca"
+    finally:
+        self.driver.switch_to.default_content()
 
     def safe_find_text(self, by, value):
-        # (Função sem alterações)
         try: return self.driver.find_element(by, value).text
         except NoSuchElementException: return ""
 
