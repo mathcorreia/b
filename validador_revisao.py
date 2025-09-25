@@ -4,6 +4,7 @@ import shutil
 import pandas as pd
 import openpyxl
 import re
+import pyodbc
 import traceback
 import tkinter as tk
 from tkinter import scrolledtext
@@ -17,12 +18,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
-# Biblioteca para conectar com SQL Server
-import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
+ERROS_DIR = 'erros' 
 
 class ValidadorGUI:
     def __init__(self, root):
@@ -32,6 +31,7 @@ class ValidadorGUI:
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
+        self.stop_event = threading.Event()
         self.reprocess_choice = "" 
         self.driver = None
 
@@ -44,8 +44,16 @@ class ValidadorGUI:
         self.label_status = tk.Label(top_frame, text="Pronto para iniciar.", font=("Helvetica", 12, "bold"), fg="#00529B", pady=10, wraplength=700, justify='center')
         self.label_status.pack()
 
-        self.action_button = tk.Button(top_frame, text="Iniciar Automação", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=20, pady=10)
-        self.action_button.pack(pady=(5, 10))
+        # Frame para os botões principais
+        action_frame = tk.Frame(top_frame)
+        action_frame.pack(pady=(5,10))
+
+        self.action_button = tk.Button(action_frame, text="Iniciar Automação", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=20, pady=10)
+        self.action_button.pack(side='left', padx=5)
+
+        # Botão Parar, inicialmente desabilitado
+        self.stop_button = tk.Button(action_frame, text="Parar Automação", command=self.request_stop, font=("Helvetica", 12, "bold"), bg="#f44336", fg="white", padx=20, pady=10, state='disabled')
+        self.stop_button.pack(side='left', padx=5)
 
         self.reprocess_frame = tk.Frame(main_frame)
         self.reprocess_button = tk.Button(self.reprocess_frame, text="Reprocessar Itens com Erro", command=lambda: self.set_reprocess_choice("reprocess"), font=("Helvetica", 10, "bold"), bg="#FFA500", fg="white")
@@ -63,6 +71,7 @@ class ValidadorGUI:
         self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
 
     def on_closing(self):
+        self.stop_event.set() 
         if self.driver:
             self.driver.quit()
         self.root.destroy()
@@ -83,21 +92,34 @@ class ValidadorGUI:
         self.root.after(0, lambda: self.label_status.config(text=text, fg=color))
 
     def iniciar_automacao_thread(self):
-        self.action_button.config(state='disabled', text="Executando...")
+        self.stop_event.clear() 
+        self.action_button.config(state='disabled')
+        self.stop_button.config(state='normal') 
         self.log_text.config(state='normal')
         self.log_text.delete(1.0, tk.END)
         self.log_text.config(state='disabled')
         
         threading.Thread(target=self.run_automation_loop, daemon=True).start()
 
+    def request_stop(self):
+        """Sinaliza para a automação parar."""
+        self.registrar_log("Solicitação de parada recebida... A automação será interrompida após a tarefa atual.")
+        self.update_status("Parando automação...", "#E69500")
+        self.stop_event.set()
+        self.stop_button.config(state='disabled')
+
     def prompt_user_action(self, message):
         self.user_action_event.clear()
         self.root.after(0, lambda: [
             self.update_status(message, color="#E69500"),
-            self.action_button.config(text="Continuar", command=self.signal_user_action, state="normal")
+            self.action_button.config(text="Continuar", command=self.signal_user_action, state="normal"),
+            self.stop_button.config(state='disabled')
         ])
         self.user_action_event.wait()
-        self.root.after(0, lambda: self.action_button.config(state='disabled', text="Executando..."))
+        self.root.after(0, lambda: [
+            self.action_button.config(state='disabled', text="Executando..."),
+            self.stop_button.config(state='normal')
+        ])
 
     def signal_user_action(self):
         self.user_action_event.set()
@@ -181,6 +203,8 @@ class ValidadorGUI:
     def run_automation_loop(self):
         reprocess_mode = False
         while True:
+            if self.stop_event.is_set(): break
+            
             try:
                 if not reprocess_mode:
                     df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
@@ -190,6 +214,8 @@ class ValidadorGUI:
                 
                 self.run_automation_cycle(df_input)
                 
+                if self.stop_event.is_set(): break
+                
                 self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
                 erros_df = self.check_for_errors()
                 
@@ -198,6 +224,7 @@ class ValidadorGUI:
                     self.root.after(0, lambda: [
                         self.update_status(f"{len(erros_df)} OSs com falhas encontradas. Deseja reprocessá-las?", "#E69500"),
                         self.action_button.pack_forget(),
+                        self.stop_button.pack_forget(),
                         self.reprocess_frame.pack()
                     ])
                     
@@ -236,7 +263,7 @@ class ValidadorGUI:
                  if self.driver:
                     self.driver.quit()
                     self.driver = None
-                 self.root.after(0, self.action_button.pack_forget)
+                 self.root.after(0, lambda: [self.action_button.pack(), self.stop_button.pack_forget(), self.action_button.config(state='normal')])
 
     def check_for_errors(self):
         df_results = pd.read_excel(self.excel_path)
@@ -270,6 +297,7 @@ class ValidadorGUI:
         self.registrar_log(f"{len(df_to_process) - novas_os_count} OCs da lista atual já tiveram seus dados extraídos.")
 
         if novas_os_count > 0:
+            if self.stop_event.is_set(): return
             self.registrar_log(f"Encontradas {novas_os_count} novas OCs para extrair.")
             
             if not self.driver:
@@ -288,13 +316,17 @@ class ValidadorGUI:
 
             wait = WebDriverWait(self.driver, 15)
             self.update_status(f"Extraindo dados de {novas_os_count} Fichas Seguidoras...")
+            if self.stop_event.is_set(): return
             self.navegar_para_fse_busca(wait)
             
             novas_linhas_dados = []
             for _, row in df_a_processar.iterrows():
+                if self.stop_event.is_set(): break
                 dados_fse = self.extrair_dados_fse(wait, str(row['OS']), row['OC_antes'], row['OC_depois'])
                 if dados_fse: novas_linhas_dados.append(dados_fse)
             
+            if self.stop_event.is_set(): return
+
             if novas_linhas_dados:
                 workbook = openpyxl.load_workbook(self.excel_path)
                 sheet = workbook.active
@@ -303,6 +335,7 @@ class ValidadorGUI:
                 workbook.save(self.excel_path)
             self.registrar_log("Etapa 1 concluída.")
 
+        if self.stop_event.is_set(): return
         self.update_status("Etapa 2: Verificando e comparando revisões...")
         workbook = openpyxl.load_workbook(self.excel_path)
         sheet = workbook.active
@@ -319,23 +352,12 @@ class ValidadorGUI:
         else:
             self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs para comparar.")
             if not self.driver:
-                self.update_status("Configurando navegador para Etapa 2...")
-                caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
-                service = ChromeService(executable_path=caminho_chromedriver)
-                options = webdriver.ChromeOptions()
-                options.add_argument("--start-maximized")
-                options.add_experimental_option("excludeSwitches", ["enable-automation"])
-                options.add_experimental_option('useAutomationExtension', False)
-                options.add_argument("--disable-blink-features=AutomationControlled")
-                self.driver = webdriver.Chrome(service=service, options=options)
-                wait = WebDriverWait(self.driver, 15)
-                self.driver.get("https://web.embraer.com.br/irj/portal")
-                self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
-
-            wait = WebDriverWait(self.driver, 15)
+            
+             wait = WebDriverWait(self.driver, 15)
             self.navegar_para_desenhos_engenharia(wait)
 
             for row_num in linhas_a_comparar:
+                if self.stop_event.is_set(): break
                 pn_extraido = sheet.cell(row=row_num, column=col_indices["PN extraído"]).value
                 rev_fse = sheet.cell(row=row_num, column=col_indices["REV. FSE"]).value
                 
@@ -363,9 +385,10 @@ class ValidadorGUI:
                 else:
                     sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value="PN NÃO ENCONTRADO NA FSE")
 
-            self.registrar_log("Salvando todas as comparações no arquivo Excel...")
-            workbook.save(self.excel_path)
-            self.registrar_log("Arquivo salvo.")
+            if not self.stop_event.is_set():
+                self.registrar_log("Salvando todas as comparações no arquivo Excel...")
+                workbook.save(self.excel_path)
+                self.registrar_log("Arquivo salvo.")
 
     def comparar_revisoes(self, rev1, rev2, nome1, nome2):
         detalhes = f"{nome1}: {rev1} vs {nome2}: {rev2}"
@@ -519,17 +542,19 @@ class ValidadorGUI:
             return ""
 
     def tirar_print_de_erro(self, identificador, etapa):
-        local_path = os.getcwd()
+        erros_path = os.path.join(os.getcwd(), ERROS_DIR)
+        os.makedirs(erros_path, exist_ok=True)
+
         identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         nome_screenshot = f"erro_local_{etapa}_{identificador_limpo}_{timestamp}.png"
-        screenshot_path = os.path.join(local_path, nome_screenshot)
+        screenshot_path = os.path.join(erros_path, nome_screenshot)
         try:
             if self.driver:
                 self.driver.save_screenshot(screenshot_path)
-                self.registrar_log(f"Um screenshot do erro foi salvo localmente em: '{screenshot_path}'")
+                self.registrar_log(f"Um screenshot do erro foi salvo em: '{screenshot_path}'")
         except Exception as e:
-            self.registrar_log(f"FALHA AO SALVAR SCREENSHOT LOCALMENTE: {e}")
+            self.registrar_log(f"FALHA AO SALVAR SCREENSHOT: {e}")
 
 if __name__ == "__main__":
     root = tk.Tk()
