@@ -17,8 +17,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
+# Biblioteca para conectar com SQL Server
 import pyodbc
 
+# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -30,7 +32,7 @@ class ValidadorGUI:
         self.root.attributes('-topmost', True)
         
         self.user_action_event = threading.Event()
-        self.reprocess_choice = "" # Armazena a escolha do usuário
+        self.reprocess_choice = "" 
         self.driver = None
 
         main_frame = tk.Frame(root, padx=10, pady=10)
@@ -45,7 +47,6 @@ class ValidadorGUI:
         self.action_button = tk.Button(top_frame, text="Iniciar Automação", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=20, pady=10)
         self.action_button.pack(pady=(5, 10))
 
-        # --- Frame para os botões de retrabalho (inicialmente oculto) ---
         self.reprocess_frame = tk.Frame(main_frame)
         self.reprocess_button = tk.Button(self.reprocess_frame, text="Reprocessar Itens com Erro", command=lambda: self.set_reprocess_choice("reprocess"), font=("Helvetica", 10, "bold"), bg="#FFA500", fg="white")
         self.finish_button = tk.Button(self.reprocess_frame, text="Finalizar", command=lambda: self.set_reprocess_choice("finish"), font=("Helvetica", 10))
@@ -182,14 +183,13 @@ class ValidadorGUI:
         while True:
             try:
                 if not reprocess_mode:
-                    df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
+                    df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
                     df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
                     df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
                     df_input['OS'] = df_input['OS'].astype(str)
                 
                 self.run_automation(df_input)
                 
-                # --- LÓGICA DE RETRABALHO ---
                 self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
                 erros_df = self.check_for_errors()
                 
@@ -208,15 +208,15 @@ class ValidadorGUI:
                     
                     if self.reprocess_choice == "reprocess":
                         self.registrar_log(f"--- INICIANDO RETRABALHO PARA {len(erros_df)} OSs ---")
-                        df_input = erros_df # Próximo loop usará apenas o dataframe de erros
+                        df_input = erros_df
                         reprocess_mode = True
-                        continue # Volta para o início do loop de automação
+                        continue
                     else:
                         self.update_status("Processo finalizado com itens pendentes.", "#00529B")
-                        break # Sai do loop
+                        break
                 else:
                     self.update_status("Processo concluído com sucesso e sem erros!", "#008A00")
-                    break # Sai do loop
+                    break
 
             except Exception as e:
                 error_details = traceback.format_exc()
@@ -230,28 +230,24 @@ class ValidadorGUI:
                  self.root.after(0, self.action_button.pack_forget)
 
     def check_for_errors(self):
-        """Verifica o Excel final e retorna um DataFrame com as OSs que precisam de retrabalho."""
         df_results = pd.read_excel(self.excel_path)
         df_results['OS'] = df_results['OS'].astype(str)
         
-        # Condições de falha: Status não é 'OK' ou alguma revisão chave não foi encontrada.
         falha_eng = ~df_results['Status (Eng vs FSE)'].str.contains("OK", na=True)
         falha_banco = ~df_results['Status (Banco vs FSE)'].str.contains("OK", na=True)
+        falha_eng_banco = ~df_results['Status (Banco vs Eng)'].str.contains("OK", na=True)
         
-        df_erros = df_results[falha_eng | falha_banco].copy()
+        df_erros = df_results[falha_eng | falha_banco | falha_eng_banco].copy()
         
-        # Recria as colunas necessárias para o reprocessamento
         if not df_erros.empty:
             df_erros[['OC_antes', 'OC_depois']] = df_erros['OC'].astype(str).str.split('/', expand=True, n=1)
         
         return df_erros
 
     def run_automation(self, df_to_process):
-        self.update_status("Iniciando o Validador...")
         self.registrar_log("--- INÍCIO DO CICLO DE EXECUÇÃO ---")
         self.setup_excel()
         
-        self.update_status("Etapa 1: Verificando novas OCs para extração...")
         os_ja_extraidas = set()
         try:
             df_existente = pd.read_excel(self.excel_path)
@@ -303,18 +299,18 @@ class ValidadorGUI:
         sheet = workbook.active
         col_indices = {name: i+1 for i, name in enumerate(self.headers)}
         
-        # Filtra as linhas a comparar a partir do dataframe de entrada
         df_para_comparar = pd.read_excel(self.excel_path)
         df_para_comparar['OS'] = df_para_comparar['OS'].astype(str)
         df_para_comparar = df_para_comparar[df_para_comparar['OS'].isin(df_to_process['OS'].tolist())]
         
-        linhas_a_comparar = df_para_comparar[df_para_comparar['Status (Eng vs FSE)'].isna()].index + 2 # +2 para alinhar com as linhas do Excel
+        linhas_a_comparar = df_para_comparar[df_para_comparar['Status (Eng vs FSE)'].isna()].index + 2
         
         if not linhas_a_comparar.any():
             self.registrar_log("Nenhuma comparação pendente para este ciclo.")
         else:
             self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs para comparar.")
             if not self.driver:
+                # ... (configura driver se não estiver ativo)
             
              wait = WebDriverWait(self.driver, 15)
             self.navegar_para_desenhos_engenharia(wait)
@@ -332,13 +328,22 @@ class ValidadorGUI:
                     status_banco_fse, detalhes_banco_fse = self.comparar_revisoes(revisao_banco, rev_fse, "BANCO", "FSE")
                     status_banco_eng, detalhes_banco_eng = self.comparar_revisoes(revisao_banco, rev_engenharia, "BANCO", "ENG")
 
-                    # Atualiza a planilha em memória
                     sheet.cell(row=row_num, column=col_indices["REV. Engenharia"], value=rev_engenharia)
                     sheet.cell(row=row_num, column=col_indices["Revisão do Banco"], value=revisao_banco)
                     sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value=status_eng_fse)
-                    # ... (e assim por diante para todas as colunas)
+                    sheet.cell(row=row_num, column=col_indices["Detalhes (Eng vs FSE)"], value=detalhes_eng_fse)
+                    sheet.cell(row=row_num, column=col_indices["Status (Banco vs FSE)"], value=status_banco_fse)
+                    sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs FSE)"], value=detalhes_banco_fse)
+                    sheet.cell(row=row_num, column=col_indices["Status (Banco vs Eng)"], value=status_banco_eng)
+                    sheet.cell(row=row_num, column=col_indices["Detalhes (Banco vs Eng)"], value=detalhes_banco_eng)
+                    
+                    for nome_coluna, valor in dados_banco.items():
+                        if nome_coluna in col_indices:
+                            sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor)
+                else:
+                    sheet.cell(row=row_num, column=col_indices["Status (Eng vs FSE)"], value="PN NÃO ENCONTRADO NA FSE")
 
-            self.registrar_log("Salvando todas as comparações no Excel...")
+            self.registrar_log("Salvando todas as comparações no arquivo Excel...")
             workbook.save(self.excel_path)
             self.registrar_log("Arquivo salvo.")
             
@@ -451,9 +456,11 @@ class ValidadorGUI:
 
             seletores_desenho = ['//*[@id="FOAH.Dplpl049View.cmdGBI"]']
             if not self.find_and_click(wait, seletores_desenho, "Botão Desenho"):
+                # Se não encontrar a revisão, tenta encontrar uma mensagem de erro
                 try:
                     WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located((By.XPATH, "//*[contains(text(), 'não foi encontrado')]")))
                     self.registrar_log(f"AVISO: PN {part_number} não encontrado no sistema de Engenharia.")
+                    # Clica no botão Voltar da tela de erro
                     voltar_erro_selectors = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', "//*[contains(@title, 'Voltar')]"]
                     self.find_and_click(wait, voltar_erro_selectors, "Botão Voltar (Tela de Erro)")
                     return "Não encontrado em ENG"
@@ -479,6 +486,7 @@ class ValidadorGUI:
             self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. Tentando voltar para a tela de busca.")
             self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
             try:
+                # Tenta clicar em qualquer botão de 'Voltar' genérico para não travar o loop
                 voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
                 self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
             except:
@@ -500,7 +508,7 @@ class ValidadorGUI:
     def tirar_print_de_erro(self, identificador, etapa):
         local_path = os.getcwd()
         identificador_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now().strftime("%Ym%d_%H%M%S")
         nome_screenshot = f"erro_local_{etapa}_{identificador_limpo}_{timestamp}.png"
         screenshot_path = os.path.join(local_path, nome_screenshot)
         try:
