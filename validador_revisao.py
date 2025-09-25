@@ -8,7 +8,6 @@ import traceback
 import tkinter as tk
 from tkinter import scrolledtext
 import threading
-import pyodbc
 from datetime import datetime
 from selenium import webdriver
 from selenium.webdriver.common.by import By
@@ -18,8 +17,10 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 
+# Biblioteca para conectar com SQL Server
 import pyodbc
 
+# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 
@@ -174,7 +175,7 @@ class ValidadorGUI:
             self.setup_excel()
 
             self.update_status("Lendo lista de OCs a processar...")
-            df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
+            df_input = pd.read_excel('lista.xlsx', sheet_name='baixar_lm', engine='openpyxl')
             df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
             df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
             df_input['OS'] = df_input['OS'].astype(str)
@@ -370,16 +371,19 @@ class ValidadorGUI:
 
             dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip()
             
-            time.sleep(1) 
+            time.sleep(1)
             
-            seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]")
+            seriacao_elements = self.driver.find_elements(By.XPATH, "//b[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[contains(@class,'border-fse-form-dyn')]//div[contains(@class, 'ng-binding')]")
             dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()])
             
             pn_extraido_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", ""))
             dados["PN extraído"] = pn_extraido_match.group(1) if pn_extraido_match else "Não encontrado"
             dados["REV. FSE"] = dados.get("REV. PN", "Não encontrada")
 
-            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
+            botao_voltar = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Voltar')]")))
+            botao_voltar.click()
+            wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
+
             return dados
         except Exception:
             self.registrar_log(f"ERRO: Falha ao extrair dados da FSE para a OC {oc_completa}.")
@@ -455,13 +459,12 @@ class ValidadorGUI:
             wait.until(EC.visibility_of_element_located((By.XPATH, "//input[contains(@id, 'PartNumber')]")))
             return revisao
 
-        except TimeoutException as e_timeout:
+        except TimeoutException:
             self.registrar_log(f"AVISO: Revisão não encontrada para o PN {part_number}. Tentando voltar para a tela de busca.")
             self.tirar_print_de_erro(part_number, "busca_revisao_timeout")
             try:
                 voltar_generico = ['//*[@id="FOAH.Dplpl049View.cmdVoltar"]', '//*[@id="FOAHJJEL.GbiMenu.cmdRetornarNaveg"]', "//*[contains(@title, 'Voltar')]"]
                 self.find_and_click(WebDriverWait(self.driver, 5), voltar_generico, "Botão Voltar (Genérico)")
-                self.driver.switch_to.default_content()
             except:
                  self.registrar_log("Não foi possível retornar à tela de busca. A automação pode precisar ser reiniciada.")
             return "Não encontrada"
