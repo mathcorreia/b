@@ -44,7 +44,7 @@ class ValidadorGUI:
         self.action_frame.pack(pady=(5,10))
         self.action_button = tk.Button(self.action_frame, text="Iniciar Automação Completa", command=self.iniciar_automacao_thread, font=("Helvetica", 12, "bold"), bg="#4CAF50", fg="white", padx=15, pady=10)
         self.action_button.pack(side='left', padx=5)
-        self.db_button = tk.Button(self.action_frame, text="Atualizar Apenas do Banco", command=self.iniciar_atualizacao_banco_thread, font=("Helvetica", 12, "bold"), bg="#008CBA", fg="white", padx=15, pady=10)
+        self.db_button = tk.Button(self.action_frame, text="Verificar/Atualizar Banco", command=self.iniciar_atualizacao_banco_thread, font=("Helvetica", 12, "bold"), bg="#008CBA", fg="white", padx=15, pady=10)
         self.db_button.pack(side='left', padx=5)
         self.pause_button = tk.Button(self.action_frame, text="Pausar", command=self.request_pause, font=("Helvetica", 12, "bold"), bg="#E69500", fg="white", padx=20, pady=10)
         self.reprocess_frame = tk.Frame(main_frame)
@@ -134,13 +134,12 @@ class ValidadorGUI:
             self.registrar_log(f"Arquivo de resultados '{EXCEL_FILENAME}' encontrado.")
     
     def consultar_dados_banco(self, part_number):
+        colunas_db = ["COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
         if not part_number or part_number == "Não encontrado":
-            return {col: "PN Inválido" for col in ["COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]}
-
+            return {col: "PN Inválido" for col in colunas_db}
         self.registrar_log(f"Consultando banco de dados para o PN: {part_number}...")
         string_conexao = (r'DRIVER={SQL Server};SERVER=172.20.1.7;DATABASE=CPS;UID=sa;PWD=masterkey;')
-        comando_sql = "SELECT COD_OS_COMPLETO, COD_PECAS, N_OS_CLIENTE, N_DESENHO, QTDE_PECAS, DT_ENTRADA, U_ZLT_REVISAO_2D, U_ZLT_REVISAO_DES_3D, U_ZLT_REVISAO_DI, U_ZLT_REVISAO_DI_F2, U_ZLT_REVISAO_DI_F3, U_ZLT_REVISAO_FI, U_ZLT_REVISAO_LP, U_ZLT_REVISAO_LP_F2, U_ZLT_REVISAO_LP_F3, U_ZLT_REVISAO_PN, U_ZLT_REVISAO_ROT, U_REVISAO_3D_MF, U_CLASSE_ELEB, U_PN_DE_PROJETO, U_OM, CAMPO_ADICIONAL9 FROM TOS_AUX WHERE N_DESENHO = ?"
-        colunas_db = ["COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
+        comando_sql = "SELECT " + ", ".join(colunas_db) + " FROM TOS_AUX WHERE N_DESENHO = ?"
         try:
             with pyodbc.connect(string_conexao, timeout=5) as conexao:
                 resultado = pd.read_sql(comando_sql, conexao, params=[part_number])
@@ -158,13 +157,18 @@ class ValidadorGUI:
         self.registrar_log("--- INICIANDO NOVO CICLO DE AUTOMAÇÃO COMPLETA ---")
         self.update_status("Iniciando automação...")
         reprocess_mode = False
+        # Mantém a lista original em memória para o reprocessamento
+        df_original = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
+        df_original.rename(columns={df_original.columns[0]: 'OS'}, inplace=True)
+        df_original.iloc[:, 1] = df_original.iloc[:, 1].astype(str)
+        df_original[['OC_antes', 'OC_depois']] = df_original.iloc[:, 1].str.split('/', expand=True, n=1)
+        df_original['OS'] = df_original['OS'].astype(str)
+
+        df_para_processar = df_original.copy()
+
         while not self.stop_event.is_set():
             try:
-                if not reprocess_mode:
-                    self.update_status("Lendo arquivo 'lista.xlsx'...")
-                    df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
-                    self.registrar_log(f"Arquivo 'lista.xlsx' lido. Total de {len(df_input)} OCs na lista.")
-                self.run_automation_cycle(df_input, reprocess_mode=reprocess_mode)
+                self.run_automation_cycle(df_para_processar, reprocess_mode=reprocess_mode)
                 if self.stop_event.is_set(): break
                 self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
                 erros_df = self.check_for_errors()
@@ -179,8 +183,11 @@ class ValidadorGUI:
                     self.root.after(0, self.reprocess_frame.pack_forget)
                     if self.reprocess_choice == "reprocess":
                         self.registrar_log(f"--- INICIANDO REPROCESSO PARA {len(erros_df)} ITENS COM FALHA ---")
-                        df_input = erros_df.copy(); reprocess_mode = True
-                        self.clear_error_status_in_excel(df_input)
+                        # --- CORREÇÃO DEFINITIVA DO ERRO DE REPROCESSO ---
+                        os_com_erro = erros_df['OS'].astype(str).tolist()
+                        df_para_processar = df_original[df_original['OS'].isin(os_com_erro)].copy()
+                        reprocess_mode = True
+                        self.clear_error_status_in_excel(erros_df)
                         continue
                     else:
                         self.update_status("Processo finalizado com itens pendentes.", "#00529B"); break
@@ -207,7 +214,7 @@ class ValidadorGUI:
         os_com_erro = set(df_erros['OS'].astype(str))
         for row_num in range(2, sheet.max_row + 1):
             if str(sheet.cell(row=row_num, column=col_indices["OS"]).value) in os_com_erro:
-                for col in ["Status (Eng vs FSE)", "Detalhes (Eng vs FSE)", "Status (Banco vs FSE)", "Detalhes (Banco vs FSE)", "Status (Banco vs Eng)", "Detalhes (Banco vs Eng)"]:
+                for col in ["REV. Engenharia", "Revisão do Banco", "Status (Eng vs FSE)", "Detalhes (Eng vs FSE)", "Status (Banco vs FSE)", "Detalhes (Banco vs FSE)", "Status (Banco vs Eng)", "Detalhes (Banco vs Eng)"]:
                     sheet.cell(row=row_num, column=col_indices[col], value=None)
         workbook.save(self.excel_path)
         self.registrar_log(f"{len(os_com_erro)} status de itens com erro foram limpos para reprocessamento.")
@@ -215,13 +222,6 @@ class ValidadorGUI:
     def run_automation_cycle(self, df_to_process, reprocess_mode=False):
         try:
             self.setup_excel()
-            if 'OC_antes' not in df_to_process.columns:
-                df_to_process.rename(columns={df_to_process.columns[0]: 'OS'}, inplace=True)
-                if 'OC' in df_to_process.columns:
-                    df_to_process[['OC_antes', 'OC_depois']] = df_to_process['OC'].astype(str).str.split('/', expand=True, n=1)
-                else:
-                    df_to_process[['OC_antes', 'OC_depois']] = df_to_process.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
-                df_to_process['OS'] = df_to_process['OS'].astype(str)
             if not reprocess_mode:
                 self.update_status("Verificando OCs já extraídas...")
                 os_ja_extraidas = set(pd.read_excel(self.excel_path)['OS'].astype(str)) if os.path.exists(self.excel_path) and 'OS' in pd.read_excel(self.excel_path).columns else set()
@@ -272,7 +272,7 @@ class ValidadorGUI:
         threading.Thread(target=self.run_db_update_only, daemon=True).start()
 
     def run_db_update_only(self):
-        self.registrar_log("--- INICIANDO ATUALIZAÇÃO APENAS DO BANCO DE DADOS ---")
+        self.registrar_log("--- INICIANDO VERIFICAÇÃO GERAL DO BANCO DE DADOS ---")
         try:
             if not os.path.exists(self.excel_path):
                 self.update_status(f"ERRO: Arquivo '{EXCEL_FILENAME}' não encontrado.", "red"); self.registrar_log(f"Processo abortado: '{EXCEL_FILENAME}' não existe."); return
@@ -280,20 +280,39 @@ class ValidadorGUI:
             workbook = openpyxl.load_workbook(self.excel_path)
             sheet = workbook.active
             col_indices = {name: i + 1 for i, name in enumerate(self.headers)}
-            pn_col_idx, banco_rev_col_idx = col_indices["PN extraído"], col_indices["Revisão do Banco"]
-            linhas_a_atualizar = [i + 2 for i, row in enumerate(sheet.iter_rows(min_row=2)) if row[pn_col_idx - 1].value and not row[banco_rev_col_idx - 1].value]
-            total_a_atualizar = len(linhas_a_atualizar)
-            if total_a_atualizar == 0:
-                self.update_status("Nenhum item novo para atualizar do banco.", "#008A00"); self.registrar_log("Nenhuma linha com PN válido e 'Revisão do Banco' vazia foi encontrada."); return
-            self.registrar_log(f"Encontradas {total_a_atualizar} linhas para atualizar do banco de dados.")
-            for i, row_num in enumerate(linhas_a_atualizar):
+            pn_col_idx = col_indices["PN extraído"]
+            # --- LÓGICA DE VERIFICAÇÃO GERAL ---
+            linhas_a_verificar = [i + 2 for i, row in enumerate(sheet.iter_rows(min_row=2)) if row[pn_col_idx - 1].value and row[pn_col_idx - 1].value != "Não encontrado"]
+            total_a_verificar = len(linhas_a_verificar)
+            if total_a_verificar == 0:
+                self.update_status("Nenhum item para verificar no banco.", "#008A00"); self.registrar_log("Nenhuma linha com 'PN extraído' válido foi encontrada."); return
+            self.registrar_log(f"Encontradas {total_a_verificar} linhas para verificar/atualizar do banco de dados.")
+            updates_count = 0
+            for i, row_num in enumerate(linhas_a_verificar):
                 pn_extraido = sheet.cell(row=row_num, column=pn_col_idx).value
-                self.update_status(f"Atualizando {i+1} de {total_a_atualizar}: PN {pn_extraido}")
+                self.update_status(f"Verificando {i+1} de {total_a_verificar}: PN {pn_extraido}")
                 dados_banco = self.consultar_dados_banco(pn_extraido)
-                for nome_coluna, valor in dados_banco.items():
+                is_update_needed = False
+                for nome_coluna, valor_novo in dados_banco.items():
                     if nome_coluna in col_indices:
-                        sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor)
-            self.update_status("Salvando atualizações no Excel...", "#00529B"); workbook.save(self.excel_path); self.update_status(f"{total_a_atualizar} itens atualizados com sucesso do banco!", "#008A00"); self.registrar_log("--- FIM DA ATUALIZAÇÃO DO BANCO DE DADOS ---")
+                        valor_antigo = sheet.cell(row=row_num, column=col_indices[nome_coluna]).value
+                        if str(valor_antigo) != str(valor_novo):
+                            is_update_needed = True
+                            break
+                if is_update_needed:
+                    updates_count += 1
+                    self.registrar_log(f"Atualizando dados para o PN: {pn_extraido}")
+                    for nome_coluna, valor_novo in dados_banco.items():
+                        if nome_coluna in col_indices:
+                            sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor_novo)
+                else:
+                    self.registrar_log(f"Dados para o PN {pn_extraido} já estavam atualizados.")
+            
+            if updates_count > 0:
+                self.update_status("Salvando atualizações no Excel...", "#00529B"); workbook.save(self.excel_path); self.update_status(f"{updates_count} de {total_a_verificar} itens foram atualizados com sucesso!", "#008A00")
+            else:
+                 self.update_status("Verificação concluída. Nenhum dado precisou ser atualizado.", "#008A00")
+            self.registrar_log("--- FIM DA VERIFICAÇÃO DO BANCO DE DADOS ---")
         except Exception as e:
             self.update_status(f"Erro Crítico na atualização do banco: {e}", "red"); self.registrar_log(f"ERRO CRÍTICO (DB-ONLY): {traceback.format_exc()}")
         finally:
