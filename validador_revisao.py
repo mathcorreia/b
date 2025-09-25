@@ -360,9 +360,20 @@ class ValidadorGUI:
         else:
             self.registrar_log(f"Encontradas {len(linhas_a_comparar)} OCs para comparar.")
             if not self.driver:
-                # ... (configura driver se não estiver ativo)
-            
-             wait = WebDriverWait(self.driver, 15)
+                self.update_status("Configurando navegador para Etapa 2...")
+                caminho_chromedriver = os.path.join(os.getcwd(), "chromedriver.exe")
+                service = ChromeService(executable_path=caminho_chromedriver)
+                options = webdriver.ChromeOptions()
+                options.add_argument("--start-maximized")
+                options.add_experimental_option("excludeSwitches", ["enable-automation"])
+                options.add_experimental_option('useAutomationExtension', False)
+                options.add_argument("--disable-blink-features=AutomationControlled")
+                self.driver = webdriver.Chrome(service=service, options=options)
+                wait = WebDriverWait(self.driver, 15)
+                self.driver.get("https://web.embraer.com.br/irj/portal")
+                self.prompt_user_action("Faça o login para a comparação e clique em 'Continuar'.")
+
+            wait = WebDriverWait(self.driver, 15)
             self.navegar_para_desenhos_engenharia(wait)
 
             for row_num in linhas_a_comparar:
@@ -459,8 +470,9 @@ class ValidadorGUI:
             dados["PN extraído"] = pn_extraido_match.group(1) if pn_extraido_match else "Não encontrado"
             dados["REV. FSE"] = dados.get("REV. PN", "Não encontrada")
 
-            botao_voltar = wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Voltar')]")))
-            botao_voltar.click()
+            # Otimização: Clica em Voltar ao invés de recarregar a página
+            botao_voltar_xpath = "/html/body/main/div/ui-view/div/div[3]/fse-operations-form/div[1]/div[2]/div/div[3]/button[3]"
+            self.find_and_click(wait, [botao_voltar_xpath, "//button[contains(text(), 'Voltar')]"], "Botão Voltar (FSE)")
             wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
 
             return dados
