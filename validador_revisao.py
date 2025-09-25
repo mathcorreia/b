@@ -17,7 +17,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver.common.action_chains import ActionChains
 import pyodbc
 
-# --- CONSTANTES GLOBAIS ---
 LOG_FILENAME = 'log_validador.txt'
 EXCEL_FILENAME = 'Extracao_Dados_FSE.xlsx'
 ERROS_DIR = 'erros'
@@ -157,7 +156,7 @@ class ValidadorGUI:
         self.registrar_log("--- INICIANDO NOVO CICLO DE AUTOMAÇÃO COMPLETA ---")
         self.update_status("Iniciando automação...")
         reprocess_mode = False
-        # Mantém a lista original em memória para o reprocessamento
+        
         df_original = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
         df_original.rename(columns={df_original.columns[0]: 'OS'}, inplace=True)
         df_original.iloc[:, 1] = df_original.iloc[:, 1].astype(str)
@@ -183,7 +182,6 @@ class ValidadorGUI:
                     self.root.after(0, self.reprocess_frame.pack_forget)
                     if self.reprocess_choice == "reprocess":
                         self.registrar_log(f"--- INICIANDO REPROCESSO PARA {len(erros_df)} ITENS COM FALHA ---")
-                        # --- CORREÇÃO DEFINITIVA DO ERRO DE REPROCESSO ---
                         os_com_erro = erros_df['OS'].astype(str).tolist()
                         df_para_processar = df_original[df_original['OS'].isin(os_com_erro)].copy()
                         reprocess_mode = True
@@ -205,7 +203,12 @@ class ValidadorGUI:
 
     def check_for_errors(self):
         df = pd.read_excel(self.excel_path)
-        return df[(~df['Status (Eng vs FSE)'].astype(str).str.contains("OK", na=False))].copy()
+        status_col = 'Status (Eng vs FSE)'
+        df_erros = df[
+            (~df[status_col].astype(str).str.contains("OK", na=False)) &
+            (~df[status_col].astype(str).str.contains("FSE NÃO ENCONTRADA", na=False))
+        ].copy()
+        return df_erros
 
     def clear_error_status_in_excel(self, df_erros):
         workbook = openpyxl.load_workbook(self.excel_path)
@@ -281,7 +284,6 @@ class ValidadorGUI:
             sheet = workbook.active
             col_indices = {name: i + 1 for i, name in enumerate(self.headers)}
             pn_col_idx = col_indices["PN extraído"]
-            # --- LÓGICA DE VERIFICAÇÃO GERAL ---
             linhas_a_verificar = [i + 2 for i, row in enumerate(sheet.iter_rows(min_row=2)) if row[pn_col_idx - 1].value and row[pn_col_idx - 1].value != "Não encontrado"]
             total_a_verificar = len(linhas_a_verificar)
             if total_a_verificar == 0:
@@ -296,9 +298,8 @@ class ValidadorGUI:
                 for nome_coluna, valor_novo in dados_banco.items():
                     if nome_coluna in col_indices:
                         valor_antigo = sheet.cell(row=row_num, column=col_indices[nome_coluna]).value
-                        if str(valor_antigo) != str(valor_novo):
-                            is_update_needed = True
-                            break
+                        if str(valor_antigo or '').strip() != str(valor_novo or '').strip():
+                            is_update_needed = True; break
                 if is_update_needed:
                     updates_count += 1
                     self.registrar_log(f"Atualizando dados para o PN: {pn_extraido}")
@@ -307,7 +308,6 @@ class ValidadorGUI:
                             sheet.cell(row=row_num, column=col_indices[nome_coluna], value=valor_novo)
                 else:
                     self.registrar_log(f"Dados para o PN {pn_extraido} já estavam atualizados.")
-            
             if updates_count > 0:
                 self.update_status("Salvando atualizações no Excel...", "#00529B"); workbook.save(self.excel_path); self.update_status(f"{updates_count} de {total_a_verificar} itens foram atualizados com sucesso!", "#008A00")
             else:
@@ -345,12 +345,32 @@ class ValidadorGUI:
         return status, detalhes
 
     def extrair_dados_fse(self, wait, os_num, oc1, oc2):
+        oc_completa = f"{oc1}/{oc2}"
         try:
-            oc_completa = f"{oc1}/{oc2}"; wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']"))).clear(); self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderNumber']").send_keys(oc1); wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']"))).clear(); self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderLine']").send_keys(oc2); wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click(); wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click(); wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderNumber']"))).clear()
+            self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderNumber']").send_keys(oc1)
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//input[@ng-model='vm.search.orderLine']"))).clear()
+            self.driver.find_element(By.XPATH, "//input[@ng-model='vm.search.orderLine']").send_keys(oc2)
+            wait.until(EC.element_to_be_clickable((By.ID, "searchBtn"))).click()
+            
+            try:
+                error_element_xpath = "//span[contains(@class, 'ngn-message') and normalize-space()='FSe não encontrada']"
+                WebDriverWait(self.driver, 3).until(EC.visibility_of_element_located((By.XPATH, error_element_xpath)))
+                self.registrar_log(f"ERRO PERMANENTE: 'FSe não encontrada' para a OC {oc_completa}.")
+                self.tirar_print_de_erro(oc_completa.replace('/', '-'), "FSE_NAO_ENCONTRADA")
+                return {"OS": os_num, "OC": oc_completa, "Status (Eng vs FSE)": "FSE NÃO ENCONTRADA", "Detalhes (Eng vs FSE)": f"OC {oc_completa} não existe no portal."}
+            except TimeoutException:
+                pass
+
+            wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(@ng-click, 'vm.showFseDetails')]"))).click()
+            wait.until(EC.visibility_of_element_located((By.ID, "fseHeader")))
+            
             dados = {"OS": os_num}; oc_item_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[1]/div[5]").replace('\n', '/').strip(); oc_item_split = [x.strip() for x in oc_item_raw.split('/')]; dados["OC"], dados["Item"] = (oc_item_split[0], oc_item_split[1]) if len(oc_item_split) > 1 else (oc_item_split[0] if oc_item_split else "", ""); codem_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[1]").replace('CODEM / DT. REV. ROT.\n', '').strip(); codem_split = [x.strip() for x in codem_raw.split('\n')]; dados["CODEM"], dados["DT. REV. ROT."] = (codem_split[0], codem_split[1]) if len(codem_split) > 1 else (codem_split[0] if codem_split else "", ""); pn_raw = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[3]/div[2]").replace('PN / REV. PN / LID\n', '').strip(); pn_parts = [p for p in pn_raw.replace('\n', ' ').split() if p]; dados["PN"], dados["REV. PN"], dados["LID"] = (pn_parts[0], pn_parts[1], pn_parts[2]) if len(pn_parts) > 2 else ((pn_parts[0], pn_parts[1], "") if len(pn_parts) > 1 else ((pn_parts[0], "", "") if len(pn_parts) > 0 else ("", "", ""))); dados["PLANTA"] = self.safe_find_text(By.XPATH, "//*[normalize-space()='PLANTA']/parent::div/following-sibling::div").strip(); dados["IND. RASTR."] = self.safe_find_text(By.XPATH, "//*[@id='fseHeader']/div[2]/div[3]").replace('IND. RASTR.\n', '').strip(); seriacao_elements = self.driver.find_elements(By.XPATH, "//*[normalize-space()='NÚMERO DE SERIAÇÃO']/ancestor::div[@class='row']/following-sibling::div[@class='row']//div[contains(@class, 'ng-binding')]"); dados["NÚMERO DE SERIAÇÃO"] = ", ".join([el.text.strip() for el in seriacao_elements if el.text.strip()]); pn_match = re.search(r'(\d+-\d+-\d+)', dados.get("PN", "")); dados["PN extraído"] = pn_match.group(1) if pn_match else "Não encontrado"; dados["REV. FSE"] = dados.get("REV. PN", "Não encontrada")
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1"); return dados
         except Exception:
-            oc_str = f"{oc1}/{oc2}"; self.registrar_log(f"ERRO: Falha ao extrair dados da FSE para a OC {oc_str}."); self.tirar_print_de_erro(oc_str.replace('/', '-'), "extracao_FSE"); self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1"); return None
+            self.registrar_log(f"ERRO INESPERADO ao extrair dados da FSE para a OC {oc_completa}.")
+            self.tirar_print_de_erro(oc_completa.replace('/', '-'), "extracao_FSE_inesperado")
+            self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1"); return None
     
     def navegar_para_fse_busca(self, wait):
         original_window = self.driver.current_window_handle; wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click(); wait.until(EC.number_of_windows_to_be(2))
