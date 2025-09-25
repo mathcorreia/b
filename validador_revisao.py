@@ -287,7 +287,7 @@ class ValidadorGUI:
                     self.navegar_para_fse_busca(wait)
 
                     for i, (_, row) in enumerate(df_a_extrair.iterrows()):
-                        self.pause_event.wait() # <--- PONTO DE PAUSA
+                        self.pause_event.wait() 
                         if self.stop_event.is_set(): break
                         self.update_status(f"Extraindo {i+1} de {novas_os_count}: OC {row['OC_antes']}/{row['OC_depois']}")
                         dados_fse = self.extrair_dados_fse(wait, str(row['OS']), row['OC_antes'], row['OC_depois'])
@@ -315,7 +315,7 @@ class ValidadorGUI:
                 self.navegar_para_desenhos_engenharia(wait)
                 
                 for i, row_num in enumerate(linhas_a_comparar):
-                    self.pause_event.wait() # <--- PONTO DE PAUSA
+                    self.pause_event.wait()
                     if self.stop_event.is_set(): break
                     self.update_status(f"Comparando item {i+1} de {len(linhas_a_comparar)}...")
                     self.processar_linha(sheet, row_num, col_indices, wait)
@@ -414,7 +414,6 @@ class ValidadorGUI:
             return None
     
     def navegar_para_fse_busca(self, wait):
-        # (Função sem alterações)
         original_window = self.driver.current_window_handle
         wait.until(EC.element_to_be_clickable((By.ID, "L2N10"))).click()
         wait.until(EC.number_of_windows_to_be(2))
@@ -423,14 +422,12 @@ class ValidadorGUI:
         self.prompt_user_action("No navegador, navegue para 'FSE' > 'Busca FSe' e clique em 'Continuar'.")
 
     def navegar_para_desenhos_engenharia(self, wait):
-        # (Função sem alterações)
         self.driver.switch_to.window(self.driver.window_handles[0])
         self.driver.get("https://web.embraer.com.br/irj/portal")
         wait.until(EC.element_to_be_clickable((By.ID, "L2N1"))).click()
         self.prompt_user_action("Valide se a tela 'Desenhos Engenharia' está aberta e clique em 'Continuar'.")
     
     def find_and_click(self, wait, selectors, description):
-        # (Função sem alterações)
         for selector in selectors:
             try:
                 element = wait.until(EC.element_to_be_clickable((By.XPATH, selector)))
@@ -491,7 +488,6 @@ def buscar_revisao_engenharia(self, wait, part_number):
         except NoSuchElementException: return ""
 
     def tirar_print_de_erro(self, identificador, etapa):
-        # (Função sem alterações)
         os.makedirs(ERROS_DIR, exist_ok=True)
         id_limpo = re.sub(r'[\\/*?:"<>|]', "", str(identificador))
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
