@@ -142,7 +142,16 @@ class ValidadorGUI:
             workbook = openpyxl.Workbook()
             sheet = workbook.active
             sheet.title = "Dados FSE"
-            self.headers = ["OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN", "LID", "PLANTA", "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE", "REV. Engenharia", "Revisão do Banco", "Status (Eng vs FSE)", "Detalhes (Eng vs FSE)", "Status (Banco vs FSE)", "Detalhes (Banco vs FSE)", "Status (Banco vs Eng)", "Detalhes (Banco vs Eng)", "COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
+            self.headers = ["OS", "OC", "Item", "CODEM", "DT. REV. ROT.", "PN", "REV. PN",
+                             "LID", "PLANTA", "IND. RASTR.", "NÚMERO DE SERIAÇÃO", "PN extraído", "REV. FSE", 
+                             "REV. Engenharia", "Revisão do Banco", "Status (Eng vs FSE)", "Detalhes (Eng vs FSE)", 
+                             "Status (Banco vs FSE)", "Detalhes (Banco vs FSE)", "Status (Banco vs Eng)",
+                             "Detalhes (Banco vs Eng)", "COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", 
+                             "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", 
+                             "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", 
+                             "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", 
+                             "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
+            
             sheet.append(self.headers)
             for cell in sheet[1]: cell.font = openpyxl.styles.Font(bold=True)
             workbook.save(self.excel_path)
@@ -156,11 +165,17 @@ class ValidadorGUI:
     
     def consultar_dados_banco(self, part_number):
 
-        colunas_db = ["COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
+        colunas_db = ["COD_OS_COMPLETO", "COD_PECAS", "N_OS_CLIENTE", "N_DESENHO", 
+                      "QTDE_PECAS", "DT_ENTRADA", "U_ZLT_REVISAO_2D", "U_ZLT_REVISAO_DES_3D", 
+                      "U_ZLT_REVISAO_DI", "U_ZLT_REVISAO_DI_F2", "U_ZLT_REVISAO_DI_F3", "U_ZLT_REVISAO_FI", 
+                      "U_ZLT_REVISAO_LP", "U_ZLT_REVISAO_LP_F2", "U_ZLT_REVISAO_LP_F3", "U_ZLT_REVISAO_PN", "U_ZLT_REVISAO_ROT", 
+                      "U_REVISAO_3D_MF", "U_CLASSE_ELEB", "U_PN_DE_PROJETO", "U_OM", "CAMPO_ADICIONAL9"]
+        
         if not part_number or part_number == "Não encontrado":
             return {col: "PN Inválido" for col in colunas_db}
         
         self.registrar_log(f"Consultando banco de dados para o PN: {part_number}...")
+
         string_conexao = (r'DRIVER={SQL Server};SERVER=172.20.1.7;DATABASE=CPS;UID=sa;PWD=masterkey;')
 
         comando_sql = "SELECT " + ", ".join(colunas_db) + " FROM TOS_AUX WHERE N_DESENHO = ?"
