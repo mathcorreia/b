@@ -183,16 +183,13 @@ class ValidadorGUI:
         while True:
             try:
                 if not reprocess_mode:
-                    # Lê a planilha de entrada apenas na primeira execução
                     df_input = pd.read_excel('lista.xlsx', sheet_name='lista', engine='openpyxl')
                     df_input.rename(columns={df_input.columns[0]: 'OS'}, inplace=True)
                     df_input[['OC_antes', 'OC_depois']] = df_input.iloc[:, 1].astype(str).str.split('/', expand=True, n=1)
                     df_input['OS'] = df_input['OS'].astype(str)
                 
-                # Executa o ciclo principal de automação
                 self.run_automation_cycle(df_input)
                 
-                # Após o ciclo, verifica se há erros para reprocessar
                 self.update_status("Verificando se existem erros para reprocessar...", "#00529B")
                 erros_df = self.check_for_errors()
                 
@@ -211,23 +208,21 @@ class ValidadorGUI:
                     
                     if self.reprocess_choice == "reprocess":
                         self.registrar_log(f"--- INICIANDO RETRABALHO PARA {len(erros_df)} OSs ---")
-                        df_input = erros_df # O próximo loop usará apenas o dataframe de erros
+                        df_input = erros_df
                         reprocess_mode = True
-                        # Limpa as colunas de status para forçar a re-comparação
                         workbook = openpyxl.load_workbook(self.excel_path)
                         sheet = workbook.active
                         col_indices = {name: i + 1 for i, name in enumerate(self.headers)}
-                        for index, row in erros_df.iterrows():
-                             # Encontra a linha no Excel pelo número da OS
+                        for _, row in erros_df.iterrows():
                             for row_idx in range(2, sheet.max_row + 1):
                                 if str(sheet.cell(row=row_idx, column=1).value) == str(row['OS']):
                                     sheet.cell(row=row_idx, column=col_indices["Status (Eng vs FSE)"], value=None)
                                     break
                         workbook.save(self.excel_path)
-                        continue # Volta para o início do loop de automação
+                        continue
                     else:
                         self.update_status("Processo finalizado com itens pendentes.", "#00529B")
-                        break # Sai do loop
+                        break
                 else:
                     self.update_status("Processo concluído com sucesso e sem erros!", "#008A00")
                     break
@@ -437,9 +432,7 @@ class ValidadorGUI:
         except Exception:
             self.registrar_log(f"ERRO: Falha ao extrair dados da FSE para a OC {oc_completa}.")
             self.tirar_print_de_erro(oc_completa, "extracao_FSE")
-            # Tenta se recuperar retornando à página de busca
             self.driver.get("https://appscorp2.embraer.com.br/gfs/#/fse/search/1")
-            # Aguarda a página recarregar antes de continuar
             wait.until(EC.visibility_of_element_located((By.ID, "searchBtn")))
             return None
     
@@ -488,7 +481,6 @@ class ValidadorGUI:
             seletores_desenho = ['//*[@id="FOAH.Dplpl049View.cmdGBI"]']
             self.find_and_click(wait, seletores_desenho, "Botão Desenho")
 
-            # Lógica de recuperação rápida de erro
             try:
                 seletor_rev = '//*[@id="FOAHJJEL.GbiMenu.TreeNodeType1.0.childNode.0.childNode.0.childNode.0.childNode.0-cnt-start"]'
                 rev_element = WebDriverWait(self.driver, 5).until(EC.visibility_of_element_located((By.XPATH, seletor_rev)))
